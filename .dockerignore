@@ -1,0 +1,14 @@
+node_modules
+.git
+.github
+.githooks
+data
+data-test
+data-features
+data-tz-check
+docs
+web
+*.png
+*.webp
+*.md
+docker-compose*.yml

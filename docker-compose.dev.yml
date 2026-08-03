@@ -1,0 +1,9 @@
+# Local development overlay: build from source instead of pulling the
+# published image.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+
+services:
+  game-night-bot:
+    build: .
+    image: game-night-bot:dev

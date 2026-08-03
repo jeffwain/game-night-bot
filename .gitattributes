@@ -1,0 +1,8 @@
+# Normalize everything to LF in the repo; Docker + the sandbox are Linux,
+# and shell scripts / #!/bin/sh hooks must be LF anyway.
+* text=auto eol=lf
+
+# Don't touch binaries
+*.png  binary
+*.webp binary
+*.ico  binary

@@ -1,0 +1,38 @@
+{
+  "name": "boardgame-night-bot",
+  "version": "2.0.0",
+  "description": "Discord bot that runs a hosting rotation for a recurring board game night.",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node src/testDb.js && node src/testFeatures.js",
+    "test:db": "node src/testDb.js",
+    "test:features": "node src/testFeatures.js",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix"
+  },
+  "dependencies": {
+    "discord.js": "^14.17.3",
+    "dotenv": "^16.4.5",
+    "node-cron": "^4.2.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.5.0",
+    "globals": "^17.6.0"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jeffwain/boardgame-night-bot.git"
+  },
+  "bugs": {
+    "url": "https://github.com/jeffwain/boardgame-night-bot/issues"
+  },
+  "homepage": "https://github.com/jeffwain/boardgame-night-bot#readme",
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}

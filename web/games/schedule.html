@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Game Schedule</title>
+  <style>
+    body { font: 16px system-ui, sans-serif; max-width: 40rem; margin: 2rem auto; padding: 0 1rem; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #ddd; }
+    .updated { color: #666; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+  <h1>Upcoming Games</h1>
+  <table>
+    <thead><tr><th>Date</th><th>Host</th><th>Status</th></tr></thead>
+    <tbody id="rows"></tbody>
+  </table>
+  <p class="updated" id="updated"></p>
+  <script>
+    async function load() {
+      // no-store so DSM/browser never serves a stale snapshot
+      const res = await fetch('./schedule.json', { cache: 'no-store' });
+      const data = await res.json();
+      document.getElementById('rows').innerHTML = data.schedule.map(g =>
+        `<tr><td>${g.date}</td><td>${g.host}</td><td>${g.status}</td></tr>`
+      ).join('');
+      document.getElementById('updated').textContent =
+        'Updated ' + new Date(data.updatedAt).toLocaleString();
+    }
+    load().catch(e => document.getElementById('rows').innerHTML =
+      `<tr><td colspan="3">Could not load schedule.</td></tr>`);
+  </script>
+</body>
+</html>

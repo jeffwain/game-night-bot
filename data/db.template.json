@@ -1,0 +1,71 @@
+{
+  "players": [
+    {
+      "id": 1,
+      "name": "First Player",
+      "discord_id": "####################",
+      "is_active": true
+    },
+    {
+      "id": 2,
+      "name": "Second Player",
+      "discord_id": "####################",
+      "is_active": true
+    },
+    {
+      "id": 3,
+      "name": "Third Player",
+      "discord_id": "####################",
+      "is_active": true
+    },
+    {
+      "id": 4,
+      "name": "Fourth Player",
+      "discord_id": "####################",
+      "is_active": true
+    }
+  ],
+  "schedule": [
+    {
+      "id": 1,
+      "player_id": 1,
+      "game_date": "2026-06-16",
+      "status": "pending",
+      "notified": false
+    },
+    {
+      "id": 2,
+      "player_id": 4,
+      "game_date": "2026-06-23",
+      "status": "pending",
+      "notified": false
+    },
+    {
+      "id": 3,
+      "player_id": 2,
+      "game_date": "2026-06-30",
+      "status": "pending",
+      "notified": false
+    },
+    {
+      "id": 4,
+      "player_id": 3,
+      "game_date": "2026-07-07",
+      "status": "pending",
+      "notified": false
+    },
+    {
+      "id": 5,
+      "player_id": 1,
+      "game_date": "2026-07-14",
+      "status": "pending",
+      "notified": false
+    }
+  ],
+  "settings": {
+    "announcementsChannel": "YOUR_ANNOUNCEMENTS_CHANNEL_ID",
+    "notificationsChannel": "YOUR_NOTIFICATIONS_CHANNEL_ID",
+    "timezone": "America/Chicago",
+    "reminderTime": "10:00"
+  }
+}

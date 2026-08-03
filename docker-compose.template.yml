@@ -1,0 +1,45 @@
+# Board Game Night Bot
+# https://github.com/jeffwain/game-night-bot
+#
+# Quick start:
+#   1. Create a file named .env next to this one containing:
+#        DISCORD_TOKEN=your_token_here
+#        TZ=America/Chicago
+#   2. docker compose up -d
+#   3. docker compose logs -f      <- prints an invite link if not in a server yet
+#   4. Run /admin config in Discord to pick channels and a reminder time.
+#
+# To update:   docker compose pull && docker compose up -d
+
+services:
+  game-night-bot:
+    # `:2` follows the latest 2.x release - fixes and features, never a
+    # breaking change. Pin a full version (e.g. `:2.0.0`) to update by hand.
+    image: ghcr.io/jeffwain/game-night-bot:2
+    container_name: game-night-bot
+    restart: unless-stopped
+
+    environment:
+      - NODE_ENV=production
+
+      # REQUIRED. Read from the .env file beside this compose file.
+      # You can also skip .env entirely and put the token in data/.env instead.
+      - DISCORD_TOKEN=${DISCORD_TOKEN:-}
+
+      # Your timezone. Changeable later from Discord with /admin config.
+      - TZ=${TZ:-America/Chicago}
+
+      # Optional: background scan interval in ms (default 3600000 = 1 hour).
+      #- CHECK_INTERVAL_MS=3600000
+
+      # Optional: publish a public schedule page. Uncomment together with the
+      # web volume below.
+      #- WEB_EXPORT_DIR=/app/web
+
+    volumes:
+      # Persistent state: db.json plus rolling and daily backups. Keep this.
+      - ./data:/app/data
+
+      # Optional: mount a web server document root for the public schedule
+      # page.
+      #- /web/games:/app/web
