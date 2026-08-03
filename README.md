@@ -6,18 +6,22 @@ the host afterwards whether it actually happened.
 
 You run your own copy. Your group's data stays on your own disk.
 
+## Disclaimers
+
+I'm a designer, not a full-time developer, so yes AI helped me build it. This bot was written with the assistance of Claude Opus 5 and 4.8 models. I've done my best to ensure that it's safe and secure for users beyond me and use on my own internal network and Discord server. I understand how it works and is structured. It's not perfect, but it works for us and I hope you find this as useful as we have.
+
 ---
 
 ## Setup
 
-**1 — Get a bot token**
+### 1. Get a bot token
 
 [Discord Developer Portal](https://discord.com/developers/applications) → **New
 Application** → **Bot** → **Reset Token** → copy it.
 
 Leave the privileged intents switched off. This bot doesn't need them.
 
-**2 — Create two files in an empty folder**
+### 2. Create two files in an empty folder
 
 Example copies are present in each folder that you can rename to get started.
 
@@ -25,9 +29,9 @@ Example copies are present in each folder that you can rename to get started.
 
 ```yaml
 services:
-  boardgame-bot:
-    image: ghcr.io/jeffwain/boardgame-night-bot:2
-    container_name: boardgame-bot
+  game-night-bot:
+    image: ghcr.io/jeffwain/game-night-bot:2
+    container_name: game-night-bot
     restart: unless-stopped
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN:-}
@@ -43,7 +47,7 @@ DISCORD_TOKEN=paste_your_token_here
 TZ=America/Chicago
 ```
 
-**3 — Start it**
+### 3. Start it
 
 ```bash
 docker compose up -d
@@ -51,10 +55,10 @@ docker compose logs -f
 ```
 
 The logs print an invite link. Open it, add the bot to your server, and it
-posts a setup card with channel pickers — click through that and you're
+posts a setup card with channel pickers. Click through that and you're
 configured. No further files to edit.
 
-**4 — Add your group**
+### 4. Add your group
 
 ```
 /player add name: Alice user: @alice
