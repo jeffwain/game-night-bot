@@ -9,7 +9,7 @@
 //
 // Discord caps custom IDs at 100 characters.
 
-export const SEPARATOR = ':';
+const SEPARATOR = ':';
 const MAX_LENGTH = 100;
 
 // Build a custom ID. Throws rather than letting Discord reject the component
@@ -53,7 +53,7 @@ const LEGACY_REWRITES = [
   ['host_select_swap_', (rest) => cid('host', 'swapselect', rest)]
 ].sort((a, b) => b[0].length - a[0].length);
 
-export function translateLegacy(rawId) {
+function translateLegacy(rawId) {
   if (rawId.includes(SEPARATOR)) return rawId; // already the new format
   for (const [prefix, rewrite] of LEGACY_REWRITES) {
     if (rawId === prefix) return rewrite('');

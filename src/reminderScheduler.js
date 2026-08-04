@@ -18,9 +18,7 @@ export function scheduleReminders(client) {
   reminderTask = cron.schedule(expression, async () => {
     console.log('Running scheduled board game night upcoming reminder scans via cron...');
     try {
-      // Imported lazily so this module has no static dependency on dmCheck.js,
-      // which imports config.js. Keeps the module graph acyclic.
-      const { runUpcomingReminderCheck } = await import('./dmCheck.js');
+      const { runUpcomingReminderCheck } = await import('./scanners.js');
       await runUpcomingReminderCheck(client);
     } catch (err) {
       console.error('Error running scheduled upcoming reminder check via cron:', err.message);

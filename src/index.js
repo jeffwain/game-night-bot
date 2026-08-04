@@ -1,13 +1,13 @@
 import { Client, GatewayIntentBits, Partials, REST, Routes, MessageFlags } from 'discord.js';
 import dotenv from 'dotenv';
 import fs from 'fs';
-import { commands, handleCommand } from './commands.js';
+import { commands, handleCommand, handleAutocomplete } from './commands/index.js';
+import { runDmCheck, runAttendanceSummaryCheck, runUnclaimedGameCheck } from './scanners.js';
 import {
-  runDmCheck,
   handleButtonInteraction,
-  runAttendanceSummaryCheck,
-  runUnclaimedGameCheck
-} from './dmCheck.js';
+  handleSelectInteraction,
+  handleModalSubmit
+} from './interactions.js';
 import { scheduleReminders, isReminderWindowOpen } from './reminderScheduler.js';
 import { getDbStats, exportWebSnapshot, getSettings } from './database.js';
 
@@ -240,17 +240,14 @@ client.on('guildCreate', async (guild) => {
 client.on('interactionCreate', async (interaction) => {
   try {
     if (interaction.isAutocomplete()) {
-      const { handleAutocomplete } = await import('./commands.js');
       await handleAutocomplete(interaction);
     } else if (interaction.isChatInputCommand()) {
       await handleCommand(interaction);
     } else if (interaction.isButton()) {
       await handleButtonInteraction(interaction);
     } else if (interaction.isAnySelectMenu()) {
-      const { handleSelectInteraction } = await import('./dmCheck.js');
       await handleSelectInteraction(interaction);
     } else if (interaction.isModalSubmit()) {
-      const { handleModalSubmit } = await import('./dmCheck.js');
       await handleModalSubmit(interaction);
     }
   } catch (err) {

@@ -10,7 +10,7 @@ process.env.DB_DIR = DIR;
 process.env.TZ = 'America/Chicago';
 
 const db = await import('./database.js');
-const { commands, handleAutocomplete } = await import('./commands.js');
+const { commands, handleAutocomplete } = await import('./commands/index.js');
 const { today } = await import('./config.js');
 
 let pass = 0;
@@ -143,7 +143,7 @@ ok('unhandled autocomplete responds empty instead of erroring');
 // ---------- 5. CUSTOM ID ROUTER ----------
 console.log('\n5. Custom ID router');
 const { cid, parseCid } = await import('./customId.js');
-const { __routes } = await import('./dmCheck.js');
+const { __routes } = await import('./interactions.js');
 const allRoutes = new Set([
   ...__routes.buttonRoutes.keys(),
   ...__routes.selectRoutes.keys(),
@@ -186,7 +186,7 @@ ok('multi-arg IDs round-trip; over-length IDs fail loudly instead of at send tim
 
 // ---------- 6. COMMAND DISPATCH ----------
 console.log('\n6. Command dispatch');
-const { __commandRoutes, resolveAction } = await import('./commands.js');
+const { __commandRoutes, resolveAction } = await import('./commands/index.js');
 
 // Derive every action the slash-command tree can actually produce, and require
 // a handler for each. This is what catches "added a subcommand, forgot to wire
@@ -221,8 +221,8 @@ ok('resolveAction produces the same keys the dispatch table is built from');
 // These carry the densest edge cases in the codebase and had no coverage.
 console.log('\n7. Date parsing, RSVP phrasing, schedule rippling');
 
-const { parseAndNormalizeDate, chunkToFields } = await import('./commands.js');
-const { formatRsvpSummaryText } = await import('./dmCheck.js');
+const { parseAndNormalizeDate, chunkToFields } = await import('./format.js');
+const { formatRsvpSummaryText } = await import('./rsvp.js');
 
 db.updateSettings('timezone', 'America/Chicago');
 const todayIso = today(0);

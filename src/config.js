@@ -15,7 +15,7 @@ import { DEFAULT_TIMEZONE } from './constants.js';
 // Everything that computes a date or gates on wall-clock time must go through
 // here. Previously date strings came from the container TZ while the reminder
 // window came from settings.timezone, so the two could disagree.
-export function resolveTimezone() {
+function resolveTimezone() {
   const candidate = getSettings().timezone || process.env.TZ || DEFAULT_TIMEZONE;
   if (!isValidTimezone(candidate)) {
     console.warn(`Invalid timezone "${candidate}"; falling back to ${DEFAULT_TIMEZONE}.`);

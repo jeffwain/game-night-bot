@@ -454,46 +454,10 @@ export function getRotationIntervalDays() {
   return 7;
 }
 
-export function appendNewRotation(startDateStr, intervalDays) {
-  const db = readDb();
-  const activePlayers = db.players.filter(p => p.is_active);
-  if (activePlayers.length === 0) {
-    throw new Error('No active players found to generate the next rotation.');
-  }
-
-  const shuffled = [...activePlayers];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  const parsedDate = new Date(startDateStr + 'T00:00:00');
-  let nextId = db.schedule.reduce((max, s) => s.id > max ? s.id : max, 0) + 1;
-
-  const newEntries = shuffled.map((player, index) => {
-    const gameDate = new Date(parsedDate);
-    gameDate.setDate(parsedDate.getDate() + index * intervalDays);
-    
-    const year = gameDate.getFullYear();
-    const month = String(gameDate.getMonth() + 1).padStart(2, '0');
-    const day = String(gameDate.getDate()).padStart(2, '0');
-    
-    return {
-      id: nextId++,
-      player_id: player.id,
-      game_date: `${year}-${month}-${day}`,
-      status: 'pending',
-      notified: false,
-      reminder_sent: false,
-      summary_sent: false,
-      rsvps: {}
-    };
-  });
-
-  db.schedule = [...db.schedule, ...newEntries];
-  writeDbSync(db);
-  return getSchedule().filter(s => s.status === 'pending');
-}
+// Note: rotation generation (shuffle + date spacing) lives in the /update
+// handler, not here -- see commands/rotation.js. This module only persists the
+// entries it is handed. A second, self-shuffling `appendNewRotation` used to
+// sit here; it had no callers and duplicated that logic, so it is gone.
 
 export function appendSchedule(entries) {
   const db = readDb();

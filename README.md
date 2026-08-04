@@ -220,12 +220,32 @@ and opens a GitHub Release.
 | File | What lives there |
 |---|---|
 | `index.js` | Startup, command registration, scan scheduling |
-| `commands.js` | Command definitions, autocomplete, one handler per action |
-| `dmCheck.js` | The scanners, and component routing |
+| `commands/index.js` | The command layer's entry point: dispatch table and permission gate |
+| `commands/definitions.js` | The slash-command tree registered with Discord |
+| `commands/player.js` | `/player` handlers |
+| `commands/rotation.js` | `/update` handlers |
+| `commands/admin.js` | `/admin` handlers |
+| `commands/general.js` | `/schedule` and `/help` |
+| `commands/autocomplete.js` | Autocomplete for player names and dates |
+| `commands/respond.js` | The one way a handler reports a problem to the user |
+| `scanners.js` | The four background scans, also run by `/admin scan` |
+| `interactions.js` | Button, select, and modal route tables and dispatch |
+| `scheduleEditor.js` | The `/update edit` step-through views |
+| `hostCalls.js` | Offering a night to the channel when a host bows out |
+| `rsvp.js` | RSVP tallying and the self-updating RSVP embed |
+| `format.js` | Date parsing, embed wording, Discord size limits |
+| `announce.js` | Posting an embed to the configured channels |
 | `setup.js` | The first-run setup card |
 | `database.js` | Persistence, backups, recovery, web export |
 | `config.js` / `time.js` | Timezone and reminder resolution |
 | `customId.js` | Component IDs, and translation of pre-2.0 ones |
+
+`format.js`, `announce.js`, `rsvp.js`, `scheduleEditor.js`, and `hostCalls.js`
+are leaf modules: the command handlers, the scanners, and the interaction
+router all draw on them, and none of them imports back. Import them directly
+rather than routing through `commands/index.js` — pulling shared helpers
+through the command layer is what made the old `commands.js` and `dmCheck.js`
+circularly dependent before 2.1.
 
 `npm test` checks that every command has a handler and that no handler is
 unreachable, so adding a subcommand without wiring it up fails the build rather
