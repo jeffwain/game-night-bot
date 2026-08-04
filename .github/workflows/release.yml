@@ -68,6 +68,12 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
+            # workflow_dispatch runs on a branch, so every semver rule above
+            # matches nothing and buildx dies with "tag is needed when pushing
+            # to registry". These keep a manual run publishable while never
+            # touching the :2 and :latest floats docker-compose.yml follows.
+            type=raw,value=edge,enable=${{ github.ref_type != 'tag' }}
+            type=sha,enable=${{ github.ref_type != 'tag' }}
           labels: |
             org.opencontainers.image.title=Board Game Night Bot
             org.opencontainers.image.description=Discord bot that runs a hosting rotation for a recurring board game night.
