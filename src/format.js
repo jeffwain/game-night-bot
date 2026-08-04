@@ -7,6 +7,7 @@
 
 import { EmbedBuilder } from 'discord.js';
 import { today } from './config.js';
+import { toIsoDate } from './time.js';
 
 // Format a YYYY-MM-DD string as e.g. "Tue 6/2".
 export function formatDateBeautiful(dateStr) {
@@ -146,10 +147,7 @@ export function parseAndNormalizeDate(inputStr) {
   // Fallback for written-out forms like "August 11, 2026".
   const genericDate = new Date(inputStr);
   if (!isNaN(genericDate.getTime())) {
-    const year = genericDate.getFullYear();
-    const month = String(genericDate.getMonth() + 1).padStart(2, '0');
-    const day = String(genericDate.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
+    return toIsoDate(genericDate);
   }
 
   return null;

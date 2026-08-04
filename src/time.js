@@ -38,6 +38,18 @@ export function dateStringInZone(timezone, date = new Date()) {
   }).format(date);
 }
 
+// Format a Date's *local* calendar day as YYYY-MM-DD.
+//
+// Only for Dates whose calendar fields are already the ones you want -- e.g.
+// the result of parsing free text. To shift an existing date string, use
+// addDaysIso instead; it does not go through local time at all.
+export function toIsoDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 // Pure calendar arithmetic on a YYYY-MM-DD string. Uses UTC internally so a
 // DST transition can never add or drop an hour and roll the date.
 export function addDaysIso(isoDate, n) {

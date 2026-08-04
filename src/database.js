@@ -857,12 +857,7 @@ export function removeGameAndShiftSchedule(gameId) {
     for (const game of subsequent) {
       const dbEntry = db.schedule.find(s => s.id === game.id);
       if (dbEntry) {
-        const date = new Date(dbEntry.game_date + 'T00:00:00');
-        date.setDate(date.getDate() - diffDays);
-        const year = date.getFullYear();
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        dbEntry.game_date = `${year}-${month}-${day}`;
+        dbEntry.game_date = addDaysIso(dbEntry.game_date, -diffDays);
         dbEntry.reminder_sent = false;
       }
     }
@@ -913,12 +908,7 @@ export function setEntryDate(gameId, newDateStr) {
       else if (pending[i + 1].id === entry.id) target = pending[i];
       else target = pending[i + 1];
 
-      const d = new Date(target.game_date + 'T00:00:00');
-      d.setDate(d.getDate() + interval);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      target.game_date = `${year}-${month}-${day}`;
+      target.game_date = addDaysIso(target.game_date, interval);
       target.notified = false;
       target.reminder_sent = false;
       bumped = true;

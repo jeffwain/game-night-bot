@@ -9,6 +9,8 @@ import * as db from '../database.js';
 import { announceToPublicChannel } from '../announce.js';
 import { replyProblem, replyError } from './respond.js';
 import { buildScheduleEditorMessage } from '../scheduleEditor.js';
+import { addDaysIso } from '../time.js';
+import { today } from '../config.js';
 import {
   formatDateBeautiful,
   formatSwapAnnouncement,
@@ -50,18 +52,13 @@ export async function cmdRotationGenerate(interaction, options, action) {
         .sort((a, b) => b.game_date.localeCompare(a.game_date));
 
       if (pending.length > 0) {
-        const lastDate = new Date(pending[0].game_date + 'T00:00:00');
-        lastDate.setDate(lastDate.getDate() + intervalDays);
-        const year = lastDate.getFullYear();
-        const month = String(lastDate.getMonth() + 1).padStart(2, '0');
-        const day = String(lastDate.getDate()).padStart(2, '0');
-        targetStartDate = `${year}-${month}-${day}`;
+        targetStartDate = addDaysIso(pending[0].game_date, intervalDays);
       } else {
-        const now = new Date();
-        const year = now.getFullYear();
-        const month = String(now.getMonth() + 1).padStart(2, '0');
-        const day = String(now.getDate()).padStart(2, '0');
-        targetStartDate = `${year}-${month}-${day}`;
+        // today(), not new Date(): this resolves in the bot's configured
+        // timezone. Reading the container clock here put the first night a day
+        // out whenever the two straddled midnight -- a UTC container with a
+        // US timezone configured is wrong for several hours every evening.
+        targetStartDate = today(0);
       }
     }
   }
@@ -83,17 +80,10 @@ export async function cmdRotationGenerate(interaction, options, action) {
     [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
   }
 
-  const entries = shuffled.map((player, index) => {
-    const gameDate = new Date(parsedDate);
-    gameDate.setDate(parsedDate.getDate() + index * intervalDays);
-    const year = gameDate.getFullYear();
-    const month = String(gameDate.getMonth() + 1).padStart(2, '0');
-    const day = String(gameDate.getDate()).padStart(2, '0');
-    return {
-      player_id: player.id,
-      game_date: `${year}-${month}-${day}`
-    };
-  });
+  const entries = shuffled.map((player, index) => ({
+    player_id: player.id,
+    game_date: addDaysIso(targetStartDate, index * intervalDays)
+  }));
 
   try {
     let resultSchedule;
