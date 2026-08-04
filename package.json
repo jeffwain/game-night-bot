@@ -1,6 +1,6 @@
 {
   "name": "game-night-bot",
-  "version": "2.0.0",
+  "version": "2.1.1",
   "description": "Discord bot that runs a hosting rotation for a recurring board game night.",
   "type": "module",
   "main": "src/index.js",
