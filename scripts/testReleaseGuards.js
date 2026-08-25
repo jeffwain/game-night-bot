@@ -10,7 +10,7 @@
 //
 // Run with: npm test
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -26,13 +26,17 @@ function git(cwd, ...args) {
   return execFileSync('git', args, { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] }).trim();
 }
 
-// Run a guard script and capture exit code + combined output.
+// Run a guard script and capture exit code + BOTH streams.
+//
+// Warnings go to stderr even on a successful run, so capturing only stdout on
+// exit 0 silently drops half of what these scripts say -- which is exactly the
+// half the unreachable-origin case is about.
 function run(cwd, script) {
+  const opts = { cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe'] };
   try {
-    const stdout = execFileSync(process.execPath, [path.join(SCRIPTS, script)], {
-      cwd, encoding: 'utf-8', stdio: ['ignore', 'pipe', 'pipe']
-    });
-    return { code: 0, out: stdout };
+    const proc = spawnSync(process.execPath, [path.join(SCRIPTS, script)], opts);
+    if (proc.error) throw proc.error;
+    return { code: proc.status ?? 0, out: `${proc.stdout ?? ''}${proc.stderr ?? ''}` };
   } catch (err) {
     return { code: err.status ?? 1, out: `${err.stdout ?? ''}${err.stderr ?? ''}` };
   }
@@ -169,6 +173,36 @@ try {
     git(clone, 'push', '-q');
 
     expect('releasing from behind origin is refused', d, 'release-preflight.js', 1, 'behind');
+  }
+
+  // -------------------------------------------- 6b. origin unreachable
+  // Being unable to fetch must WARN, never block: releasing offline is legal,
+  // and the tag pushes fine later. The warning has to say what git actually
+  // said, though -- a bare "could not reach origin" on a machine with working
+  // network sent someone looking in the wrong place once.
+  {
+    const d = newRepo('unreachable');
+    writeVersions(d, '1.0.0');
+    commit(d, 'v1.0.0');
+    git(d, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
+    // A remote that cannot possibly resolve, wired up as a real upstream.
+    const bare = path.join(ROOT, 'gone-origin.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { stdio: 'ignore' });
+    git(d, 'remote', 'add', 'origin', bare);
+    git(d, 'push', '-q', '-u', 'origin', 'main');
+    rmSync(bare, { recursive: true, force: true });   // origin disappears
+
+    const { code, out } = run(d, 'release-preflight.js');
+    if (code !== 0) {
+      failures.push(`an unreachable origin must not block a release\n    exited ${code}\n${indent(out)}`);
+    } else if (!out.includes('Could not fetch from origin')) {
+      failures.push(`an unreachable origin must warn\n${indent(out)}`);
+    } else if (!out.includes('git said:')) {
+      failures.push(`the warning must quote git's own error\n${indent(out)}`);
+    } else {
+      console.log('  PASS  an unreachable origin warns with git\'s reason and does not block');
+      pass++;
+    }
   }
 
   // ------------------------------------------------- 7. version never tagged

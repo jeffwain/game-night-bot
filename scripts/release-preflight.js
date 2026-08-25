@@ -78,11 +78,25 @@ const upstream = gitQuiet('rev-parse', '--abbrev-ref', '--symbolic-full-name', '
 if (!upstream) {
   warn(`"${branch}" has no upstream branch; skipping the up-to-date check.`);
 } else {
-  const fetched = gitQuiet('fetch', '--quiet', '--tags', 'origin') !== null;
-  if (!fetched) {
+  let fetchError = null;
+  try {
+    execFileSync('git', ['fetch', '--quiet', '--tags', 'origin'], {
+      encoding: 'utf-8',
+      // stdin inherited so a credential helper can prompt; without it, an auth
+      // prompt fails instantly and looks identical to being offline.
+      stdio: ['inherit', 'pipe', 'pipe']
+    });
+  } catch (err) {
+    fetchError = String(err.stderr || err.message || '').trim();
+  }
+
+  if (fetchError) {
     warn(
-      'Could not reach origin, so this could not confirm you are up to date.',
-      'If you are offline, the tag still pushes fine later — just make sure nobody else pushed first.'
+      'Could not fetch from origin, so this could not confirm you are up to date.',
+      'git said:',
+      ...fetchError.split('\n').slice(0, 4).map(l => '  ' + l),
+      'The comparison below uses whatever was last fetched, which may be stale.',
+      'If you are simply offline this is fine — the tag pushes later either way.'
     );
   }
   const behind = gitQuiet('rev-list', '--count', `HEAD..${upstream}`);
