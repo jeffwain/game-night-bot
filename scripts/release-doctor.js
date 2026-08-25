@@ -138,15 +138,65 @@ if (headVersion) {
     problems.push({ tag: expectedTag, kind: 'missing-tag', commit: headCommit.slice(0, 7) });
   } else if (tagCommit !== headCommit) {
     const behind = gitQuiet('rev-list', '--count', `${tagCommit}..${headCommit}`);
-    console.log(`  !!  ${expectedTag} points at ${tagCommit.slice(0, 7)}, but HEAD (${headCommit.slice(0, 7)}) is ${behind} commit(s) further on.`);
-    // If that tag is ALSO version-mismatched, it is one mistake, not two, and
-    // the mismatch advice below already tells you to move it.
-    const alreadyReported = problems.some(x => x.tag === expectedTag && x.kind === 'version-mismatch');
-    if (!alreadyReported) {
-      problems.push({ tag: expectedTag, kind: 'tag-behind-head', commit: tagCommit.slice(0, 7) });
+    const mismatched = problems.some(x => x.tag === expectedTag && x.kind === 'version-mismatch');
+    if (mismatched) {
+      // The tag names this version but sits on a commit that does not carry
+      // it. That is the broken case, already reported above with its fix.
+      console.log(`  !!  ${expectedTag} is at ${tagCommit.slice(0, 7)}; HEAD (${headCommit.slice(0, 7)}) is ${behind} commit(s) ahead.`);
+    } else {
+      // Perfectly normal: you released, then kept working. Worth saying how
+      // much is unreleased, but it is not a problem to fix.
+      console.log(`  ok  ${expectedTag} is released at ${tagCommit.slice(0, 7)}; ${behind} commit(s) since then are unreleased.`);
     }
   } else {
     console.log(`  ok  HEAD is ${expectedTag} and the tag points here.`);
+  }
+}
+
+// -------------------------------------------------------------
+// AGAINST ORIGIN
+// -------------------------------------------------------------
+//
+// Everything above reads local refs only, which misses the case where a tag is
+// perfectly self-consistent here and points somewhere else on the server. That
+// is what actually ships, and it is also what makes `git fetch --tags` refuse
+// to run at all -- git will not silently overwrite a tag, so one stale local
+// tag blocks fetching every other one.
+const remoteRaw = gitQuiet('ls-remote', '--tags', 'origin');
+if (remoteRaw === null) {
+  console.log('\n  note  Could not reach origin, so local tags were not compared against it.');
+} else {
+  const remote = new Map();
+  for (const line of remoteRaw.split('\n')) {
+    const [sha, ref] = line.split('\t');
+    if (!ref) continue;
+    // `refs/tags/v1.2.3^{}` is the peeled commit of an annotated tag; the
+    // unpeeled line is the ref itself, which is what we compare.
+    if (ref.endsWith('^{}')) continue;
+    const name = ref.replace('refs/tags/', '');
+    if (SEMVER_TAG.test(name)) remote.set(name, sha);
+  }
+
+  console.log('\nAgainst origin\n');
+  const names = [...new Set([...tags, ...remote.keys()])].sort(compareTags);
+  for (const name of names) {
+    const localSha = gitQuiet('rev-parse', `refs/tags/${name}`);
+    const remoteSha = remote.get(name);
+
+    if (localSha && remoteSha && localSha === remoteSha) {
+      console.log(`  ok  ${name} matches origin`);
+    } else if (localSha && remoteSha) {
+      const lc = gitQuiet('rev-list', '-n', '1', name)?.slice(0, 7);
+      const rc = gitQuiet('rev-list', '-n', '1', remoteSha)?.slice(0, 7) ?? remoteSha.slice(0, 7);
+      console.log(`  !!  ${name} is ${lc} here but ${rc} on origin`);
+      problems.push({ tag: name, kind: 'remote-divergence' });
+    } else if (remoteSha && !localSha) {
+      console.log(`  !!  ${name} exists on origin but not locally`);
+      problems.push({ tag: name, kind: 'missing-locally' });
+    } else {
+      console.log(`  !!  ${name} exists locally but was never pushed — nothing was released for it`);
+      problems.push({ tag: name, kind: 'never-pushed' });
+    }
   }
 }
 
@@ -182,11 +232,20 @@ for (const p of problems) {
     console.log(`  Nothing was ever released for ${p.tag}. Either tag this commit, or bump again`);
     console.log('  with `npm version <patch|minor|major>`, which tags and pushes in one step.');
   }
-  if (p.kind === 'tag-behind-head') {
-    console.log(`  ${p.tag} is stranded behind HEAD. If it never published, move it forward:`);
-    console.log(`      git tag -d ${p.tag} && git push origin :refs/tags/${p.tag}`);
-    console.log(`      git tag -a ${p.tag} -m "${p.tag}" && git push origin ${p.tag}`);
-    console.log('  If it DID publish, leave it and cut a new version instead.');
+  if (p.kind === 'remote-divergence') {
+    console.log(`  ${p.tag} points at different commits here and on origin. Origin is what built`);
+    console.log('  and shipped, so take its version unless you know otherwise:');
+    console.log('      git fetch --tags --force');
+    console.log('  Until you do, `git fetch --tags` refuses outright rather than overwrite the');
+    console.log('  local tag, which blocks every other tag from updating too.');
+  }
+  if (p.kind === 'missing-locally') {
+    console.log(`  ${p.tag} is on origin but not here. Harmless, but you are missing history:`);
+    console.log('      git fetch --tags');
+  }
+  if (p.kind === 'never-pushed') {
+    console.log(`  ${p.tag} only exists on your machine, so no release ever ran for it:`);
+    console.log(`      git push origin ${p.tag}`);
   }
   console.log('');
 }

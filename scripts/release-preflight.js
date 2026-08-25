@@ -80,7 +80,10 @@ if (!upstream) {
 } else {
   let fetchError = null;
   try {
-    execFileSync('git', ['fetch', '--quiet', '--tags', 'origin'], {
+    // Deliberately NOT --quiet: that suppresses the "! [rejected] ... would
+    // clobber existing tag" lines, which are the whole diagnosis when a local
+    // tag disagrees with origin. Output is only surfaced on failure anyway.
+    execFileSync('git', ['fetch', '--tags', 'origin'], {
       encoding: 'utf-8',
       // stdin inherited so a credential helper can prompt; without it, an auth
       // prompt fails instantly and looks identical to being offline.
@@ -91,13 +94,31 @@ if (!upstream) {
   }
 
   if (fetchError) {
-    warn(
-      'Could not fetch from origin, so this could not confirm you are up to date.',
-      'git said:',
-      ...fetchError.split('\n').slice(0, 4).map(l => '  ' + l),
-      'The comparison below uses whatever was last fetched, which may be stale.',
-      'If you are simply offline this is fine — the tag pushes later either way.'
-    );
+    // A refused tag update is not a network problem, and calling it one sends
+    // you looking in entirely the wrong place. git rejects a fetch outright
+    // when a tag it wants to update already exists locally pointing somewhere
+    // else, which means your tags and origin's genuinely disagree.
+    const clobbered = [...fetchError.matchAll(/\[rejected\]\s+(\S+)\s+->\s+\S+\s+\(would clobber existing tag\)/g)]
+      .map(m => m[1]);
+
+    if (clobbered.length > 0) {
+      fail(
+        `Your local tags disagree with origin: ${clobbered.join(', ')}.`,
+        'git refused to fetch rather than overwrite them, so nothing here can trust',
+        'what origin looks like. Take origin as the truth:',
+        '  git fetch --tags --force',
+        'then check what moved before releasing:',
+        '  npm run release:doctor'
+      );
+    } else {
+      warn(
+        'Could not fetch from origin, so this could not confirm you are up to date.',
+        'git said:',
+        ...fetchError.split('\n').slice(0, 4).map(l => '  ' + l),
+        'The comparison below uses whatever was last fetched, which may be stale.',
+        'If you are simply offline this is fine — the tag pushes later either way.'
+      );
+    }
   }
   const behind = gitQuiet('rev-list', '--count', `HEAD..${upstream}`);
   const ahead = gitQuiet('rev-list', '--count', `${upstream}..HEAD`);

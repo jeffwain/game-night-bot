@@ -205,6 +205,81 @@ try {
     }
   }
 
+  // ------------------------------------------ 6c. tags disagreeing with origin
+  // The case that started this: a local tag pointing somewhere else than
+  // origin's. git refuses the whole fetch rather than overwrite it, which also
+  // silently blocks every OTHER tag from updating.
+  {
+    const d = newRepo('clobber');
+    writeVersions(d, '1.0.0');
+    commit(d, 'first');
+    const first = git(d, 'rev-parse', 'HEAD');
+    writeVersions(d, '1.0.0');
+    writeFileSync(path.join(d, 'more.txt'), 'more\n');
+    commit(d, 'second');
+
+    const bare = path.join(ROOT, 'clobber-origin.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { stdio: 'ignore' });
+    git(d, 'remote', 'add', 'origin', bare);
+    git(d, 'push', '-q', '-u', 'origin', 'main');
+    git(d, 'tag', 'v1.0.0');                 // on HEAD (second)
+    git(d, 'push', '-q', 'origin', 'v1.0.0');
+    git(d, 'tag', '-f', 'v1.0.0', first);    // local now disagrees with origin
+
+    expect('a tag disagreeing with origin blocks the release', d, 'release-preflight.js', 1,
+      'local tags disagree with origin');
+    expect('and it is not misreported as a network failure', d, 'release-preflight.js', 1,
+      'git fetch --tags --force');
+    expect('the doctor shows both sides', d, 'release-doctor.js', 1, 'on origin');
+  }
+
+  // ------------------------------------------------ 6d. tag never pushed
+  // Local-only release tag: the workflow fires on tag pushes, so nothing ran.
+  {
+    const d = newRepo('unpushed');
+    writeVersions(d, '1.0.0');
+    commit(d, 'v1.0.0');
+    const bare = path.join(ROOT, 'unpushed-origin.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { stdio: 'ignore' });
+    git(d, 'remote', 'add', 'origin', bare);
+    git(d, 'push', '-q', '-u', 'origin', 'main');
+    git(d, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');   // never pushed
+
+    expect('the doctor spots a tag that was never pushed', d, 'release-doctor.js', 1,
+      'never pushed');
+  }
+
+  // --------------------------------------- 6e. agreeing with origin is quiet
+  {
+    const d = newRepo('agrees');
+    writeVersions(d, '1.0.0');
+    commit(d, 'v1.0.0');
+    const bare = path.join(ROOT, 'agrees-origin.git');
+    execFileSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { stdio: 'ignore' });
+    git(d, 'remote', 'add', 'origin', bare);
+    git(d, 'push', '-q', '-u', 'origin', 'main');
+    git(d, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
+    git(d, 'push', '-q', 'origin', 'v1.0.0');
+
+    expect('tags matching origin pass cleanly', d, 'release-doctor.js', 0, 'matches origin');
+    expect('and preflight is happy', d, 'release-preflight.js', 0, 'Release preflight passed');
+  }
+
+  // ------------------------------- 6f. committing after a release is not an error
+  // Every released tag falls behind HEAD the moment you commit again. Flagging
+  // that as a problem every time is how a checker trains you to ignore it.
+  {
+    const d = newRepo('after-release');
+    writeVersions(d, '1.0.0');
+    commit(d, 'v1.0.0');
+    git(d, 'tag', '-a', 'v1.0.0', '-m', 'v1.0.0');
+    writeFileSync(path.join(d, 'work.txt'), 'more work\n');
+    commit(d, 'kept working');
+
+    expect('commits after a release are reported, not flagged', d, 'release-doctor.js', 0,
+      'unreleased');
+  }
+
   // ------------------------------------------------- 7. version never tagged
   {
     const d = newRepo('untagged');
