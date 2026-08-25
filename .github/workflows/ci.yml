@@ -1,0 +1,51 @@
+# Lint and tests on every push and pull request.
+#
+# This repo previously had no CI workflow at all -- release.yml only fires on a
+# tag push, so the first time anything ran the test suite was the moment you
+# were trying to publish. A red release then looks like a broken release
+# process rather than a broken commit. Run it up front instead.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # release-doctor walks the tag history, so it needs more than the
+          # default single-commit checkout.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+      # Advisory: a tag that disagrees with the package.json at its commit can
+      # never publish, and the only thing that would otherwise notice is a
+      # failed release days later. Report it, but do not fail the build over
+      # history that is already written.
+      - name: Audit release tags
+        continue-on-error: true
+        run: npm run release:doctor
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      # The published artifact is an image, so a broken Dockerfile should fail
+      # here rather than at release time.
+      - name: Docker build (smoke test)
+        run: docker build -t game-night-bot:ci .

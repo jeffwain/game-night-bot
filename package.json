@@ -6,13 +6,18 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js",
+    "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js && node scripts/testReleaseGuards.js",
     "test:db": "node src/testDb.js",
     "test:features": "node src/testFeatures.js",
     "test:rotation": "node src/testRotation.js",
     "test:web": "node src/testWeb.js",
-    "lint": "eslint src",
-    "lint:fix": "eslint src --fix"
+    "test:release": "node scripts/testReleaseGuards.js",
+    "lint": "eslint src scripts",
+    "lint:fix": "eslint src scripts --fix",
+    "release:check": "node scripts/release-preflight.js",
+    "release:doctor": "node scripts/release-doctor.js",
+    "preversion": "node scripts/release-preflight.js && npm run lint && npm test",
+    "postversion": "git push --follow-tags && node scripts/release-posted.js"
   },
   "dependencies": {
     "discord.js": "^14.17.3",

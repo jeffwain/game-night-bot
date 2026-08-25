@@ -261,7 +261,7 @@ your proxy rewrites the path prefix.
 
 ```bash
 npm install
-npm test      # database layer, feature regressions, and the web panel
+npm test      # database, feature regressions, rotation, web panel, release guards
 npm run lint
 npm start
 ```
@@ -272,15 +272,58 @@ Run from source instead of the published image:
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
-Cut a release:
+---
+
+## Releasing
+
+One command. Nothing else.
 
 ```bash
-npm version minor && git push --follow-tags
+npm version patch     # or minor, or major
 ```
 
-The tag triggers a workflow that re-runs the tests, refuses to publish if the
-tag and `package.json` disagree, builds for amd64 and arm64, pushes to GHCR,
-and opens a GitHub Release.
+That is the whole process, and it is deliberately not two steps. `npm version`
+bumps `package.json` **and** `package-lock.json`, commits both, and creates an
+annotated tag **on that commit** — so the tag and the version can never name
+different things. The `postversion` hook pushes the commit and the tag together.
+
+Before it bumps anything, `preversion` runs `release-preflight.js`, then lint
+and the full test suite. Preflight refuses to release when:
+
+| it stops you | because |
+|---|---|
+| you're not on `main` | the tag would land on history nobody else has |
+| the tree is dirty | unrelated edits ride along into the release |
+| `package.json` and `package-lock.json` disagree | `npm ci` fails outright, so the build dies at the install step |
+| `main` is behind `origin` | you'd tag a commit that isn't the tip of the branch |
+| a tag for the current version exists on a different commit | the previous release never completed — fix that first rather than burying it |
+
+Then the tag push triggers the release workflow, which re-runs the tests,
+re-checks that tag, `package.json` and lockfile all agree, builds for amd64 and
+arm64, pushes to GHCR, and opens a GitHub Release. On success the `X.Y.Z`,
+`X.Y` and `X` image tags all move, so anything following a floating tag picks it
+up on the next `docker compose pull`.
+
+### When a tag is wrong
+
+```bash
+npm run release:doctor
+```
+
+It walks every `vX.Y.Z` tag, reads the `package.json` at the commit each one
+points at, and prints the exact commands to fix any that disagree — naming the
+commit to move the tag to. It also flags a version that was bumped but never
+tagged, which publishes nothing at all, because the workflow only fires on tag
+pushes.
+
+This is worth understanding once, because the failure is quiet. A tag whose
+commit carries a different version is rejected by the workflow every single
+time; the release simply never happens, and bumping again on top leaves the
+dead tag behind. `v2.2.1` was stranded exactly this way: tagged on a commit
+whose `package.json` still said `2.1.1`, fixed in a later commit that nothing
+pointed at.
+
+`npm run release:check` runs preflight on its own, any time, without bumping.
 
 | File | What lives there |
 |---|---|
