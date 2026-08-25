@@ -17,4 +17,15 @@ export default [
       'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
     },
   },
+  {
+    // The control panel's client-side script. Same lint rules, but it runs in
+    // a browser rather than in Node, so `document` and friends are the globals
+    // that exist and `process` is not.
+    files: ['src/web/public/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 'latest',
+      sourceType: 'script',
+      globals: { ...globals.browser },
+    },
+  },
 ];

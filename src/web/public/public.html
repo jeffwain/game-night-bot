@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Game Schedule</title>
+<style>
+  :root { color-scheme: light dark; --line: #dde1e7; --dim: #667085; }
+  @media (prefers-color-scheme: dark) { :root { --line: #333a44; --dim: #98a2b3; } }
+  body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 34rem; margin: 2.5rem auto; padding: 0 1.25rem; }
+  h1 { font-size: 1.3rem; letter-spacing: -.01em; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
+  th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); font-weight: 600; }
+  tr.past td { color: var(--dim); }
+  td.status { text-align: right; font-size: .8rem; color: var(--dim); }
+  .updated { color: var(--dim); font-size: .8rem; }
+</style>
+</head>
+<body>
+  <h1>Upcoming Games</h1>
+  <table>
+    <thead><tr><th>Date</th><th>Host</th><th class="status">Status</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="3">Loading…</td></tr></tbody>
+  </table>
+  <p class="updated" id="updated"></p>
+<script src="public.js"></script>
+</body>
+</html>

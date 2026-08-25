@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Game Night Control Panel</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#127922;</text></svg>">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header>
+  <h1>Game Night</h1>
+  <span class="meta" id="bot-state"><span class="dot"></span>connecting…</span>
+  <span class="spacer"></span>
+  <span class="meta" id="clock"></span>
+  <button class="btn" id="refresh" title="Reload from db.json">Refresh</button>
+</header>
+
+<nav role="tablist">
+  <button role="tab" data-tab="upcoming" aria-selected="true">Upcoming<span class="count" id="count-upcoming">0</span></button>
+  <button role="tab" data-tab="history" aria-selected="false">History<span class="count" id="count-history">0</span></button>
+  <button role="tab" data-tab="players" aria-selected="false">Players<span class="count" id="count-players">0</span></button>
+  <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+</nav>
+
+<main>
+  <div id="banner"></div>
+
+  <!-- ---------------------------------------------------------- UPCOMING -->
+  <section id="tab-upcoming">
+    <div class="card">
+      <h2>Upcoming nights</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Host</th><th>RSVPs</th><th>Sent</th><th></th></tr></thead>
+          <tbody id="upcoming-rows"></tbody>
+        </table>
+      </div>
+      <div class="body">
+        <div class="row">
+          <div class="field">
+            <label for="add-date">Date</label>
+            <input type="date" id="add-date">
+          </div>
+          <div class="field">
+            <label for="add-host">Host</label>
+            <select id="add-host"></select>
+          </div>
+          <button class="btn" id="add-night">Add one night</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Randomize a rotation</h2>
+      <div class="body">
+        <div class="row">
+          <div class="field">
+            <label for="rot-start">Starts</label>
+            <input type="date" id="rot-start">
+          </div>
+          <div class="field">
+            <label for="rot-interval">Every (days)</label>
+            <input type="number" id="rot-interval" min="1" max="365" style="width:6rem">
+          </div>
+          <button class="btn primary" id="rot-roll">Randomize</button>
+        </div>
+        <p class="hint">Every active player gets one night, in random order. Nothing is written until you commit.</p>
+        <div id="rot-preview"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- HISTORY -->
+  <section id="tab-history" hidden>
+    <div class="card">
+      <h2>Past nights</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Date</th><th>Host</th><th>Outcome</th><th>Who came</th><th></th></tr></thead>
+          <tbody id="history-rows"></tbody>
+        </table>
+      </div>
+      <div class="body"><p class="hint" id="history-summary"></p></div>
+    </div>
+  </section>
+
+  <!-- ----------------------------------------------------------- PLAYERS -->
+  <section id="tab-players" hidden>
+    <div class="card">
+      <h2>Players</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Name</th><th>Discord ID</th><th>In rotation</th><th>Nights</th><th></th></tr></thead>
+          <tbody id="player-rows"></tbody>
+        </table>
+      </div>
+      <div class="body">
+        <div class="row">
+          <div class="field">
+            <label for="new-player-name">Name</label>
+            <input id="new-player-name" placeholder="Jeff">
+          </div>
+          <div class="field">
+            <label for="new-player-discord">Discord ID (optional)</label>
+            <input id="new-player-discord" inputmode="numeric" placeholder="283253589525397524">
+          </div>
+          <button class="btn" id="add-player">Add player</button>
+        </div>
+        <p class="hint">Turn someone off to keep their history but skip them in future rotations. Removing deletes their scheduled nights too.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------------------------------------------------- SETTINGS -->
+  <section id="tab-settings" hidden>
+    <div class="card">
+      <h2>Bot settings</h2>
+      <div class="body">
+        <div class="row">
+          <div class="field">
+            <label for="set-reminder">Reminder time</label>
+            <input type="time" id="set-reminder">
+          </div>
+          <div class="field">
+            <label for="set-tz">Timezone</label>
+            <input id="set-tz" list="tz-list" style="width:14rem">
+            <datalist id="tz-list"></datalist>
+          </div>
+        </div>
+        <div class="row" style="margin-top:.6rem">
+          <div class="field">
+            <label for="set-announce">Announcements channel ID</label>
+            <input id="set-announce" inputmode="numeric" style="width:15rem">
+          </div>
+          <div class="field">
+            <label for="set-notify">Notifications channel ID</label>
+            <input id="set-notify" inputmode="numeric" style="width:15rem">
+          </div>
+        </div>
+        <div class="row" style="margin-top:.8rem">
+          <button class="btn primary" id="save-settings">Save settings</button>
+        </div>
+        <p class="hint" id="settings-hint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Storage</h2>
+      <div class="body"><p class="hint" id="storage-hint"></p></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="editor">
+  <h3 id="editor-title">Edit night</h3>
+  <div class="body" id="editor-body"></div>
+  <div class="foot">
+    <button class="btn" id="editor-cancel">Cancel</button>
+    <button class="btn primary" id="editor-save">Save</button>
+  </div>
+</dialog>
+
+<div id="toast" role="status" aria-live="polite"></div>
+<script src="app.js"></script>
+</body>
+</html>

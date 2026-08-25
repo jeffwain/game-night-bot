@@ -10,6 +10,8 @@ docker-compose.yml
 # Test scratch dirs
 data-test/
 data-features/
+data-web/
+data-rotation/
 data-tz-check/
 
 # Internal notes
@@ -17,3 +19,4 @@ docs/
 
 # Editor/workspace
 *.code-workspace
+_to_delete/

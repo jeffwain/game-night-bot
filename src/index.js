@@ -9,7 +9,8 @@ import {
   handleModalSubmit
 } from './interactions.js';
 import { scheduleReminders, isReminderWindowOpen } from './reminderScheduler.js';
-import { getDbStats, exportWebSnapshot, getSettings } from './database.js';
+import { getDbStats, getSettings } from './database.js';
+import { startWebServer, stopWebServer } from './web/server.js';
 
 // 1. DYNAMIC DOTENV LOADING
 if (fs.existsSync('/app/data')) {
@@ -22,7 +23,8 @@ if (fs.existsSync('/app/data')) {
 // shadow a perfectly good data/.env file. Treat empty as absent.
 for (const key of [
   'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_GUILD_ID', 'DISCORD_CHANNEL_ID',
-  'NOTIFICATIONS_CHANNEL_ID', 'CHECK_INTERVAL_MS', 'WEB_EXPORT_DIR', 'TZ'
+  'NOTIFICATIONS_CHANNEL_ID', 'CHECK_INTERVAL_MS', 'WEB_PORT', 'WEB_HOST',
+  'WEB_ALLOW_REMOTE', 'TZ'
 ]) {
   if (process.env[key] === '') delete process.env[key];
 }
@@ -112,7 +114,12 @@ function inviteUrl() {
   return `https://discord.com/api/oauth2/authorize?${params}`;
 }
 
-// 4. CLIENT EVENTS
+// 4. WEB CONTROL PANEL
+//
+// Held at module scope purely so the signal handlers can close it.
+let webServer = null;
+
+// 5. CLIENT EVENTS
 client.once('ready', async () => {
   console.log(`\n🤖 Bot is online as: ${client.user.tag}`);
   console.log(`🆔 Application ID: ${client.application.id}`);
@@ -144,8 +151,16 @@ client.once('ready', async () => {
     console.error('❌ Failed to retrieve database statistics:', err.message);
   }
 
-  // Export a fresh public schedule snapshot so the web viewer reflects current state on every boot.
-  exportWebSnapshot();
+  // The control panel and the public schedule page. Started here rather than
+  // at module load so it only listens once the bot is actually usable, and so
+  // it can hand the API a live client for resolving Discord names.
+  webServer = startWebServer({
+    client,
+    // A reminder time changed in the browser has to rebuild the cron now.
+    // Waiting for a restart is how you end up with a setting that "did not
+    // work" and a container that was never restarted to find out.
+    onSettingsChanged: () => scheduleReminders(client)
+  });
 
   await registerSlashCommands();
 
@@ -262,6 +277,7 @@ client.on('interactionCreate', async (interaction) => {
 
 function shutdown(signal) {
   console.log(`\nReceived ${signal}. Gracefully shutting down Discord Bot...`);
+  stopWebServer(webServer);
   client.destroy();
   console.log('Discord Client destroyed. Goodbye!');
   process.exit(0);

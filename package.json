@@ -1,14 +1,16 @@
 {
   "name": "game-night-bot",
   "version": "2.1.1",
-  "description": "Discord bot that runs a hosting rotation for a recurring board game night.",
+  "description": "Discord bot that runs a hosting rotation for a recurring board game night, with a LAN web control panel.",
   "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "test": "node src/testDb.js && node src/testFeatures.js",
+    "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js",
     "test:db": "node src/testDb.js",
     "test:features": "node src/testFeatures.js",
+    "test:rotation": "node src/testRotation.js",
+    "test:web": "node src/testWeb.js",
     "lint": "eslint src",
     "lint:fix": "eslint src --fix"
   },

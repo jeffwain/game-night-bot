@@ -4,6 +4,9 @@ Runs the hosting rotation for a recurring game night. It picks who hosts and
 when, posts an RSVP a few days ahead, reminds people the day before, and asks
 the host afterwards whether it actually happened.
 
+Everything it does from Discord it also does from a web control panel on your
+LAN, served by the same container.
+
 You run your own copy. Your group's data stays on your own disk.
 
 ## Disclaimers
@@ -36,6 +39,8 @@ services:
     environment:
       - DISCORD_TOKEN=${DISCORD_TOKEN:-}
       - TZ=${TZ:-America/Chicago}
+    ports:
+      - "8787:8787"
     volumes:
       - ./data:/app/data
 ```
@@ -145,7 +150,9 @@ Set it from Discord with `/admin config`. Only these come from the environment:
 | `DISCORD_TOKEN` | **yes** | Your bot token |
 | `TZ` | recommended | Starting timezone, until you set one in Discord |
 | `CHECK_INTERVAL_MS` | no | Scan interval, default 1 hour |
-| `WEB_EXPORT_DIR` | no | Turns on the public schedule page |
+| `WEB_PORT` | no | Control panel + public page port, default `8787`. `0` disables both |
+| `WEB_HOST` | no | Bind address inside the container, default `0.0.0.0` |
+| `WEB_ALLOW_REMOTE` | no | `true` drops the private-address check. Only with your own auth in front |
 
 The timezone you set in Discord wins over `TZ`, and it's the single source for
 every date the bot calculates.
@@ -175,20 +182,78 @@ On Synology, use **Action → Reset** on the project after pulling.
 
 ---
 
-## Optional: a public schedule page
+## The web control panel
 
-Set `WEB_EXPORT_DIR` and mount a web server's document root:
+`http://<the-host>:8787/` — everything the slash commands do, plus the things
+that are awkward in a chat box.
 
-```yaml
-    environment:
-      - WEB_EXPORT_DIR=/app/web
-    volumes:
-      - /web/games:/app/web
+| Tab | What you can do |
+|---|---|
+| **Upcoming** | Change any date or host inline, add a one-off night, skip a night (rest of the season slides forward), delete one (nothing else moves) |
+| **History** | Record whether each past night was played or called off, see who RSVP'd, and write notes — what got played, who turned up, why it was called off |
+| **Players** | Rename, link a Discord ID, bench someone, add or remove |
+| **Settings** | Reminder time, timezone, channels — saved settings reschedule the cron immediately, no restart |
+
+**Randomizing** is preview-first: pick a start date and interval, hit
+*Randomize*, and you get a proposed rotation you can reroll, re-date, reassign
+or drop rows from. Nothing is written until you press *Add to schedule* or
+*Replace all upcoming*. Replace only clears **pending** nights — history is
+never rewritten by a reroll. The shuffle itself is `rotation.js`, shared with
+`/update new` and `/update add`, so both surfaces lay out rotations identically.
+
+Every edit goes through the same `database.js` functions the slash commands
+use, so the two stay in step. An open tab re-reads every 30 seconds, so a change
+made in Discord shows up without a refresh.
+
+### Access
+
+**There is no password.** The panel answers requests coming from private
+network addresses only — `10.x`, `172.16–31.x`, `192.168.x`, loopback and IPv6
+unique/link-local. Anything else gets a 403, including the `/api` routes.
+
+That is the intended deployment: a box on your LAN. It also means a stray
+port-forward doesn't hand a stranger write access to your schedule.
+
+Two things to know:
+
+- **`WEB_ALLOW_REMOTE=true` turns the address check off.** Only set it if you
+  have put real authentication in front of the panel yourself — a VPN, or a
+  reverse proxy that requires a login. Without one, anyone who can reach the
+  port can rewrite your entire schedule.
+- **The check is on the socket's peer address.** If you proxy the panel, the
+  peer is the proxy, not the browser — so a reverse proxy on your LAN will
+  satisfy the check on behalf of whoever is behind it. Proxy `/public`, never
+  `/`.
+
+Bind the published port to one interface (`- "192.168.1.10:8787:8787"`) if the
+host also faces the internet. `WEB_PORT=0` turns the panel and the public page
+off entirely.
+
+---
+
+## The public schedule page
+
+`http://<the-host>:8787/public` is a read-only page with first names, dates and
+status, and nothing else — no Discord IDs, no RSVPs, no notes. It's backed by
+`/public/schedule.json`, which is the same shape the old file export wrote.
+
+To publish it, point a reverse proxy at **`/public`** — not at `/`:
+
+```
+example.com/games   ->   http://<the-host>:8787/public
 ```
 
-The bot writes `schedule.json` there on every change, and
-`web/games/schedule.html` renders it. First names only, no Discord IDs — it's
-built to be served publicly.
+The page fetches its data with a relative URL, and the server answers the
+snapshot at any path ending in `/schedule.json`, so it works whether or not
+your proxy rewrites the path prefix.
+
+> **Upgrading from 2.1.x:** `WEB_EXPORT_DIR` is gone, along with the
+> `web/games/` static files. The bot no longer writes `schedule.json` to a
+> mounted document root — it serves the page itself. Remove the
+> `WEB_EXPORT_DIR` environment variable and the `/app/web` volume mount from
+> your compose file, publish port 8787, and add the proxy rule above. **Until
+> you do, an existing public page will go stale** — nothing overwrites the
+> `schedule.json` already sitting in that document root.
 
 ---
 
@@ -196,7 +261,7 @@ built to be served publicly.
 
 ```bash
 npm install
-npm test      # database layer + feature regression tests
+npm test      # database layer, feature regressions, and the web panel
 npm run lint
 npm start
 ```
@@ -236,9 +301,24 @@ and opens a GitHub Release.
 | `format.js` | Date parsing, embed wording, Discord size limits |
 | `announce.js` | Posting an embed to the configured channels |
 | `setup.js` | The first-run setup card |
-| `database.js` | Persistence, backups, recovery, web export |
+| `database.js` | Persistence, backups, recovery |
+| `rotation.js` | Rotation layout and cadence, shared by `/update` and the panel |
 | `config.js` / `time.js` | Timezone and reminder resolution |
 | `customId.js` | Component IDs, and translation of pre-2.0 ones |
+| `web/server.js` | The HTTP server, routing and the private-address gate |
+| `web/api.js` | The JSON API, a thin layer over `database.js` |
+| `web/public/` | The panel's three static files and the public page |
+
+The panel has **no dependencies and no build step** — `node:http`, one HTML
+file, one stylesheet, one script. Measured against the bot running alone, it
+adds about **12 MB** resident at idle and settles around **27 MB** under
+sustained use, flat rather than creeping.
+
+If you are curious why "flat" is called out: `Intl.DateTimeFormat` pins roughly
+27 KB of ICU data per instance, outside the JS heap where nothing reports it.
+Building one per request read as a 60 MB climb over a few thousand page loads
+with `heapUsed` sitting perfectly still. `time.js` caches them per timezone, and
+`npm test` counts constructions so it cannot come back.
 
 `format.js`, `announce.js`, `rsvp.js`, `scheduleEditor.js`, and `hostCalls.js`
 are leaf modules: the command handlers, the scanners, and the interaction

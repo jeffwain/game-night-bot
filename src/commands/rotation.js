@@ -11,6 +11,7 @@ import { replyProblem, replyError } from './respond.js';
 import { buildScheduleEditorMessage } from '../scheduleEditor.js';
 import { addDaysIso } from '../time.js';
 import { today } from '../config.js';
+import { buildRotation } from '../rotation.js';
 import {
   formatDateBeautiful,
   formatSwapAnnouncement,
@@ -73,17 +74,10 @@ export async function cmdRotationGenerate(interaction, options, action) {
     return replyProblem(interaction, 'No active players found.');
   }
 
-  // Fisher-Yates Shuffle
-  const shuffled = [...activePlayers];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-  }
-
-  const entries = shuffled.map((player, index) => ({
-    player_id: player.id,
-    game_date: addDaysIso(targetStartDate, index * intervalDays)
-  }));
+  // Shared with the web control panel (src/rotation.js) so a rotation built in
+  // the browser and one built by /update follow identical rules.
+  const entries = buildRotation(targetStartDate, intervalDays)
+    .map(({ player_id, game_date }) => ({ player_id, game_date }));
 
   try {
     let resultSchedule;

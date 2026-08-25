@@ -253,34 +253,6 @@ function createBackup(data) {
   }
 }
 
-function exportWeb(data) {
-  const webDir = process.env.WEB_EXPORT_DIR;
-  if (!webDir) return; // no-op unless configured
-  try {
-    const names = new Map(data.players.map(p => [p.id, p.name]));
-    const schedule = data.schedule
-      .map(s => {
-        const fullName = names.get(s.player_id) ?? 'Unknown';
-        return {
-          date: s.game_date,
-          // First name only: this snapshot is published publicly at thedice.monster/games.
-          host: fullName.split(' ')[0],
-          status: s.status
-        };
-      })
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const payload = { updatedAt: new Date().toISOString(), schedule };
-    // Atomic write (temp + rename) so the page never reads a half-written file.
-    const outPath = path.join(webDir, 'schedule.json');
-    const tempPath = `${outPath}.tmp`;
-    fs.writeFileSync(tempPath, JSON.stringify(payload, null, 2), 'utf-8');
-    fs.renameSync(tempPath, outPath);
-  } catch (err) {
-    // Never let the public viewer break a DB write.
-    console.error('Web export failed:', err.message);
-  }
-}
-
 function writeDbSync(data) {
   dbCache = data;
   const { dbPath } = getDbPaths();
@@ -299,16 +271,6 @@ function writeDbSync(data) {
   }
   
   createBackup(data);
-  exportWeb(data);
-}
-
-// Re-export the current DB to the public web snapshot (used at startup).
-export function exportWebSnapshot() {
-  try {
-    exportWeb(readDb());
-  } catch (err) {
-    console.error('Web export snapshot failed:', err.message);
-  }
 }
 
 // -------------------------------------------------------------
@@ -454,10 +416,11 @@ export function getRotationIntervalDays() {
   return 7;
 }
 
-// Note: rotation generation (shuffle + date spacing) lives in the /update
-// handler, not here -- see commands/rotation.js. This module only persists the
-// entries it is handed. A second, self-shuffling `appendNewRotation` used to
-// sit here; it had no callers and duplicated that logic, so it is gone.
+// Note: rotation generation (shuffle + date spacing) does not live here -- see
+// rotation.js. This module only persists the entries it is handed. That split
+// is why the web control panel can preview a rotation and let you reroll it
+// before anything is written: buildRotation() returns entries, and only
+// appendSchedule/createSchedule below ever touch the file.
 
 export function appendSchedule(entries) {
   const db = readDb();
@@ -1079,4 +1042,71 @@ export function updateSettings(key, value) {
   db.settings[key] = value;
   writeDbSync(db);
   return db.settings;
+}
+
+// -------------------------------------------------------------
+// WEB CONTROL PANEL SUPPORT
+// -------------------------------------------------------------
+//
+// The Discord command surface addresses players by name and never needed
+// these; the browser edits records in place and does.
+
+export function renamePlayer(currentName, newName) {
+  const db = readDb();
+  const player = db.players.find(p => p.name.toLowerCase() === String(currentName).toLowerCase());
+  if (!player) throw new Error(`Player "${currentName}" not found.`);
+
+  const normalized = String(newName).trim();
+  if (!normalized) throw new Error('A player name cannot be empty.');
+
+  const clash = db.players.some(
+    p => p.id !== player.id && p.name.toLowerCase() === normalized.toLowerCase()
+  );
+  if (clash) throw new Error(`Player with name "${normalized}" already exists.`);
+
+  player.name = normalized;
+  writeDbSync(db);
+  return player;
+}
+
+// Clearing an RSVP is different from setting it to "out": it returns the
+// person to "no answer" so the next check-in asks them again.
+export function removeRsvp(gameId, discordUserId) {
+  const db = readDb();
+  const entry = db.schedule.find(s => s.id === Number(gameId));
+  if (!entry) throw new Error(`Schedule entry ID ${gameId} not found.`);
+  if (entry.rsvps) delete entry.rsvps[String(discordUserId)];
+  writeDbSync(db);
+  return entry;
+}
+
+// Free-text record of what actually happened on a night: what got played, who
+// showed up who was not on the RSVP list, why it was called off. Nothing in
+// the bot reads it; it exists so the history page is worth looking at.
+export function setEntryNotes(gameId, notes) {
+  const db = readDb();
+  const entry = db.schedule.find(s => s.id === Number(gameId));
+  if (!entry) throw new Error(`Schedule entry ID ${gameId} not found.`);
+
+  const text = String(notes ?? '').slice(0, 2000);
+  if (text) entry.notes = text;
+  else delete entry.notes;
+
+  writeDbSync(db);
+  return entry;
+}
+
+// Manual control over the "already announced" bookkeeping. Clearing a flag is
+// how you make the bot re-send a notice it thinks it already sent.
+export function setEntryFlags(gameId, flags = {}) {
+  const db = readDb();
+  const entry = db.schedule.find(s => s.id === Number(gameId));
+  if (!entry) throw new Error(`Schedule entry ID ${gameId} not found.`);
+
+  for (const key of ['notified', 'reminder_sent', 'summary_sent', 'awaiting_claim']) {
+    if (key in flags) entry[key] = Boolean(flags[key]);
+  }
+
+  writeDbSync(db);
+  return entry;
 }

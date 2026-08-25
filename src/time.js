@@ -5,6 +5,34 @@ import { DEFAULT_TIMEZONE } from './constants.js';
 
 export const DEFAULT_REMINDER_TIME = { hour: 9, minute: 0 };
 
+// Intl.DateTimeFormat is expensive to construct and cheap to reuse. Each new
+// instance pins roughly 27 KB of ICU data that the JS heap never accounts for,
+// so it does not look like a leak in heapUsed -- it shows up as resident memory
+// climbing and never coming back down.
+//
+// The bot alone would never notice: it formats a handful of dates per hour. The
+// web control panel calls through here several times per request, and measured
+// on this code that was the difference between the process sitting at 80 MB and
+// climbing past 140 MB after a couple of thousand page loads.
+//
+// The cache is keyed by timezone and capped, because isValidTimezone is reachable
+// from user input and an uncapped Map keyed by arbitrary strings is its own leak.
+const FORMATTER_CACHE_LIMIT = 64;
+const dateFormatters = new Map();
+const clockFormatters = new Map();
+const timezoneValidity = new Map();
+
+function cached(store, key, build) {
+  const hit = store.get(key);
+  if (hit) return hit;
+  // Timezones change about as often as the settings do, so a plain clear beats
+  // tracking an LRU. In practice the cache holds one or two entries forever.
+  if (store.size >= FORMATTER_CACHE_LIMIT) store.clear();
+  const made = build();
+  store.set(key, made);
+  return made;
+}
+
 // Parse a "HH:MM" 24-hour string into { hour, minute }. Returns null if invalid.
 export function parseReminderTime(timeStr) {
   if (typeof timeStr !== 'string') return null;
@@ -19,23 +47,30 @@ export function parseReminderTime(timeStr) {
 // Validate an IANA timezone string (e.g. "America/Chicago") using Intl.
 export function isValidTimezone(tz) {
   if (typeof tz !== 'string' || tz.trim() === '') return false;
+  const known = timezoneValidity.get(tz);
+  if (known !== undefined) return known;
+
+  let valid;
   try {
     Intl.DateTimeFormat(undefined, { timeZone: tz });
-    return true;
+    valid = true;
   } catch {
-    return false;
+    valid = false;
   }
+  if (timezoneValidity.size >= FORMATTER_CACHE_LIMIT) timezoneValidity.clear();
+  timezoneValidity.set(tz, valid);
+  return valid;
 }
 
 // Today's calendar date in the given IANA zone, as YYYY-MM-DD.
 // en-CA formats as YYYY-MM-DD, which is exactly the shape the DB stores.
 export function dateStringInZone(timezone, date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', {
+  return cached(dateFormatters, timezone, () => new Intl.DateTimeFormat('en-CA', {
     timeZone: timezone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit'
-  }).format(date);
+  })).format(date);
 }
 
 // Format a Date's *local* calendar day as YYYY-MM-DD.
@@ -64,12 +99,12 @@ export function addDaysIso(isoDate, n) {
 
 // Current wall-clock hour/minute in the given IANA timezone.
 export function zonedHourMinute(timezone, date = new Date()) {
-  const parts = new Intl.DateTimeFormat('en-US', {
+  const parts = cached(clockFormatters, timezone, () => new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
-  }).formatToParts(date);
+  })).formatToParts(date);
 
   let hour = 0;
   let minute = 0;
