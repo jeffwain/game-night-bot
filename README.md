@@ -40,7 +40,7 @@ services:
       - DISCORD_TOKEN=${DISCORD_TOKEN:-}
       - TZ=${TZ:-America/Chicago}
     ports:
-      - "8787:8787"
+      - "8120:8120"
     volumes:
       - ./data:/app/data
 ```
@@ -150,7 +150,7 @@ Set it from Discord with `/admin config`. Only these come from the environment:
 | `DISCORD_TOKEN` | **yes** | Your bot token |
 | `TZ` | recommended | Starting timezone, until you set one in Discord |
 | `CHECK_INTERVAL_MS` | no | Scan interval, default 1 hour |
-| `WEB_PORT` | no | Control panel + public page port, default `8787`. `0` disables both |
+| `WEB_PORT` | no | Control panel + public page port, default `8120`. `0` disables both |
 | `WEB_HOST` | no | Bind address inside the container, default `0.0.0.0` |
 | `WEB_ALLOW_REMOTE` | no | `true` drops the private-address check. Only with your own auth in front |
 
@@ -184,7 +184,7 @@ On Synology, use **Action → Reset** on the project after pulling.
 
 ## The web control panel
 
-`http://<the-host>:8787/` — everything the slash commands do, plus the things
+`http://<the-host>:8120/` — everything the slash commands do, plus the things
 that are awkward in a chat box.
 
 | Tab | What you can do |
@@ -225,7 +225,7 @@ Two things to know:
   satisfy the check on behalf of whoever is behind it. Proxy `/public`, never
   `/`.
 
-Bind the published port to one interface (`- "192.168.1.10:8787:8787"`) if the
+Bind the published port to one interface (`- "192.168.1.10:8120:8120"`) if the
 host also faces the internet. `WEB_PORT=0` turns the panel and the public page
 off entirely.
 
@@ -233,14 +233,14 @@ off entirely.
 
 ## The public schedule page
 
-`http://<the-host>:8787/public` is a read-only page with first names, dates and
+`http://<the-host>:8120/public` is a read-only page with first names, dates and
 status, and nothing else — no Discord IDs, no RSVPs, no notes. It's backed by
 `/public/schedule.json`, which is the same shape the old file export wrote.
 
 To publish it, point a reverse proxy at **`/public`** — not at `/`:
 
 ```
-example.com/games   ->   http://<the-host>:8787/public
+example.com/games   ->   http://<the-host>:8120/public
 ```
 
 The page fetches its data with a relative URL, and the server answers the
@@ -251,7 +251,7 @@ your proxy rewrites the path prefix.
 > `web/games/` static files. The bot no longer writes `schedule.json` to a
 > mounted document root — it serves the page itself. Remove the
 > `WEB_EXPORT_DIR` environment variable and the `/app/web` volume mount from
-> your compose file, publish port 8787, and add the proxy rule above. **Until
+> your compose file, publish port 8120, and add the proxy rule above. **Until
 > you do, an existing public page will go stale** — nothing overwrites the
 > `schedule.json` already sitting in that document root.
 

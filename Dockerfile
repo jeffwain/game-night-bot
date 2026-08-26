@@ -32,7 +32,7 @@ ENV NODE_ENV=production
 # The web control panel. Documentation only -- EXPOSE publishes nothing on its
 # own, and the panel refuses any request that does not come from a private
 # network address unless WEB_ALLOW_REMOTE says otherwise.
-EXPOSE 8787
+EXPOSE 8120
 
 # The entry point command
 CMD ["npm", "start"]

@@ -226,7 +226,7 @@ async function route(req, res, deps) {
 // -------------------------------------------------------------
 
 export function startWebServer(deps = {}) {
-  const port = Number(process.env.WEB_PORT ?? 8787);
+  const port = Number(process.env.WEB_PORT ?? 8120);
   if (!port) {
     console.log('🌐 Web control panel disabled (WEB_PORT=0).');
     return null;

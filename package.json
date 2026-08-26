@@ -6,6 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "web": "node scripts/web-only.js",
     "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js && node scripts/testReleaseGuards.js",
     "test:db": "node src/testDb.js",
     "test:features": "node src/testFeatures.js",

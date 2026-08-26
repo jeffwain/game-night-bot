@@ -7,7 +7,7 @@
 #        TZ=America/Chicago
 #   2. docker compose up -d
 #   3. docker compose logs -f      <- prints an invite link if not in a server yet
-#   4. Open http://<this-host>:8787/ from any machine on your LAN, or run
+#   4. Open http://<this-host>:8120/ from any machine on your LAN, or run
 #      /admin config in Discord, to pick channels and a reminder time.
 #
 # To update:   docker compose pull && docker compose up -d
@@ -34,8 +34,8 @@ services:
       #- CHECK_INTERVAL_MS=3600000
 
       # The web control panel and the public schedule page. Set WEB_PORT=0 to
-      # turn both off; change the port here AND under `ports:` if 8787 clashes.
-      #- WEB_PORT=8787
+      # turn both off; change the port here AND under `ports:` if 8120 clashes.
+      #- WEB_PORT=8120
 
       # The panel answers only requests from private (LAN) addresses. Set this
       # to true ONLY if you have put your own authentication in front of it --
@@ -44,13 +44,13 @@ services:
       #- WEB_ALLOW_REMOTE=false
 
     ports:
-      # Control panel:  http://<this-host>:8787/
-      # Public page:    http://<this-host>:8787/public
+      # Control panel:  http://<this-host>:8120/
+      # Public page:    http://<this-host>:8120/public
       #
-      # Bind to a single interface (e.g. "192.168.1.10:8787:8787") if this host
+      # Bind to a single interface (e.g. "192.168.1.10:8120:8120") if this host
       # also faces the internet. To publish the read-only page to the world,
       # point a reverse proxy at /public -- never at /.
-      - "8787:8787"
+      - "8120:8120"
 
     volumes:
       # Persistent state: db.json plus rolling and daily backups. Keep this.
