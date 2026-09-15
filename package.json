@@ -7,11 +7,12 @@
   "scripts": {
     "start": "node src/index.js",
     "web": "node scripts/web-only.js",
-    "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js && node scripts/testReleaseGuards.js",
+    "test": "node src/testDb.js && node src/testFeatures.js && node src/testRotation.js && node src/testWeb.js && node src/testBgg.js && node scripts/testReleaseGuards.js",
     "test:db": "node src/testDb.js",
     "test:features": "node src/testFeatures.js",
     "test:rotation": "node src/testRotation.js",
     "test:web": "node src/testWeb.js",
+    "test:bgg": "node src/testBgg.js",
     "test:release": "node scripts/testReleaseGuards.js",
     "lint": "eslint src scripts",
     "lint:fix": "eslint src scripts --fix",

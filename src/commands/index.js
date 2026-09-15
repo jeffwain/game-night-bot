@@ -29,6 +29,7 @@ import {
 } from './rotation.js';
 import { cmdSetup, cmdStatus, cmdScan, cmdConfig } from './admin.js';
 import { cmdSchedule, cmdHelp } from './general.js';
+import { cmdGames } from './games.js';
 
 // Re-exported so callers need only one import for the whole command layer.
 export { commands } from './definitions.js';
@@ -63,6 +64,7 @@ const commandHandlers = new Map([
   ['update:new',    cmdRotationGenerate],
   ['update:add',    cmdRotationGenerate],
   ['schedule',      cmdSchedule],
+  ['games',         cmdGames],
   ['update:done',   cmdMarkPlayed],
   ['update:swap',   cmdSwap],
   ['admin:setup',   cmdSetup],

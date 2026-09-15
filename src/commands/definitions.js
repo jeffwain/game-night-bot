@@ -20,6 +20,16 @@ export const commands = [
     .setName('help')
     .setDescription('Show the commands and setup guide'),
 
+  new SlashCommandBuilder()
+    .setName('games')
+    .setDescription('Search the games the group owns')
+    .addStringOption(opt =>
+      opt.setName('name').setDescription('Game name (fuzzy — "trmis" finds Terraforming Mars)').setRequired(true)
+    )
+    .addBooleanOption(opt =>
+      opt.setName('expansions').setDescription('Include expansions in the results (default: no)').setRequired(false)
+    ),
+
   // =====================================================================
   // /player - the roster.
   // `list` is public; the four mutating subcommands are checked in-handler,

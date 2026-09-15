@@ -56,15 +56,25 @@ try {
   // ---------- 1. STATIC + PUBLIC ROUTES ----------
   console.log('\n1. Static and public routes');
   for (const [path, needle] of [
-    ['/', 'Game Night Control Panel'],
+    ['/', 'id="app-name"'],
     ['/app.css', '--accent'],
-    ['/app.js', 'control panel']
+    ['/app.js', 'control panel'],
+    ['/search.js', 'export function searchGames']
   ]) {
     const res = await req('GET', path);
     assert.equal(res.status, 200, `${path} should serve`);
     assert.ok(res.text.includes(needle), `${path} should contain ${needle}`);
   }
   ok('control panel HTML, CSS and JS all serve');
+
+  // app.js imports search.js, so the tag has to say module and the import has
+  // to be reachable -- miss either and the panel dies silently on load.
+  const shell = (await req('GET', '/')).text;
+  assert.match(shell, /<script type="module" src="app\.js">/, 'app.js must load as a module');
+  assert.ok((await req('GET', '/')).text.includes('id="games-sync-bgg"'),
+    'the Games tab offers a BGG XML API sync');
+  assert.equal((await req('GET', '/not-an-asset.js')).status, 404, 'the asset allowlist stays closed');
+  ok('the panel loads as an ES module and its shared scorer resolves');
 
   assert.equal((await req('GET', '/healthz')).json.ok, true);
   assert.equal((await req('GET', '/definitely-not-a-route')).status, 404);
@@ -81,7 +91,7 @@ try {
 
   const pub = await req('GET', '/public');
   assert.equal(pub.status, 200);
-  assert.ok(pub.text.includes('Upcoming Games'), 'public page renders');
+  assert.ok(pub.text.includes('Coming up'), 'public page renders');
   ok('the public page serves without touching the admin gate');
 
   for (const path of ['/public.js', '/public/public.js', '/games/public.js']) {
@@ -320,6 +330,7 @@ try {
   assert.equal(serialized.includes('notes'), false, 'no notes in the public snapshot');
   ok('the public snapshot leaks no Discord IDs, RSVPs or notes');
 
+
   // ---------- 11. NO PER-REQUEST Intl CHURN ----------
   console.log('\n11. Formatter reuse');
   // Warm every timezone-dependent path once, then check that repeating it
@@ -375,6 +386,368 @@ try {
   assert.ok(suggestion.interval_days >= 1, 'a single upcoming night still yields a usable interval');
   assert.match(suggestion.start_date, /^\d{4}-\d{2}-\d{2}$/);
   ok('a one-night schedule still produces a sane suggestion');
+
+  // ---------- 13. THE INSTALL NAMES ITSELF ----------
+  console.log('\n13. Display name');
+  // Every install is somebody else's group. The panel, the browser tab and the
+  // public page all read from one setting rather than a hardcoded string.
+  let named = (await req('GET', '/api/state')).json;
+  assert.equal(named.displayName, 'Game Night', 'unset falls back to a sane default');
+
+  named = (await req('PATCH', '/api/settings', { displayName: '  The Dice Monster  ' })).json;
+  assert.equal(named.displayName, 'The Dice Monster', 'a set name is trimmed and used');
+  assert.equal(named.settings.displayName, 'The Dice Monster', 'and is reported as explicitly set');
+  assert.equal((await req('GET', '/public/schedule.json')).json.displayName, 'The Dice Monster',
+    'the public page names the group too');
+  ok('a group can name itself, and the name reaches the public page');
+
+  const longName = 'x'.repeat(200);
+  named = (await req('PATCH', '/api/settings', { displayName: longName })).json;
+  assert.equal(named.displayName.length, 60, 'an over-long name is capped rather than rejected');
+  ok('an absurd name is truncated, not an error');
+
+  named = (await req('PATCH', '/api/settings', { displayName: '' })).json;
+  assert.equal(named.displayName, 'Game Night', 'clearing it returns to the default');
+  assert.equal(named.settings.displayName, '', 'and the raw setting reads back empty');
+  ok('clearing the name falls back rather than showing blank');
+
+  // ---------- 14. GAME LIBRARY ----------
+  console.log('\n14. Game library');
+  // The library is imported from a Geekgroup dump rather than fetched, so this
+  // section stands up a two-game one by hand. The interesting parts are the
+  // shape of the clean model and the joins onto the roster -- who owns what,
+  // and whose ratings count as "ours".
+  const importDir = `${DIR}/bgg-import`;
+  fs.mkdirSync(importDir, { recursive: true });
+
+  const bggUser = (id, name, fullname) => ({ id, name, fullname, sortname: fullname.toLowerCase(), avatar: '' });
+  const statuses = own => ({
+    own, prevowned: [], fortrade: [], want: [], wanttoplay: [],
+    wanttobuy: [], wishlist: [], preordered: [], hasparts: [], wantparts: []
+  });
+  const dump = {
+    pages: 1,
+    collection: [
+      {
+        id: 13, nested: [99],
+        game: {
+          id: 13, type: 1, rename: '', name: 'Catan', originalName: 'Die Siedler von Catan',
+          published: 1995, rating_avg: 7.1, rating_count: 12000, contains: [],
+          players_min: 3, players_max: 4, players_community: { best: [4], recommended: [3, 4] },
+          time_min: 60, time_max: 120, weight_avg: 2.3, rank: 500, worth: { value: 42.5 }
+        },
+        group: { rating_avg: 6.4, rating_count: 2 },
+        users: { play_last: '1596240000', totalPlays: 9, played: { 501: 9 }, rated: { 501: 6.0, 502: 8.0, 503: 9.5 }, status: statuses([501, 502]) }
+      },
+      {
+        id: 21, nested: [],
+        game: {
+          id: 21, type: 1, rename: 'House Rules Chess', name: 'Chess', originalName: 'Chess',
+          published: 1475, rating_avg: 7.2, rating_count: 5000, contains: []
+        },
+        group: { rating_avg: 0, rating_count: 0 },
+        users: { play_last: 0, totalPlays: 0, played: [], rated: [], status: statuses([503]) }
+      }
+    ],
+    data: {
+      games: [{ id: 13, name: 'Catan' }, { id: 99, name: 'Catan: Seafarers' }],
+      users: [bggUser(501, 'ada', 'Ada Lovelace'), bggUser(502, 'grace', 'Grace Hopper'), bggUser(503, 'alan', 'Alan Turing')],
+      nested: [{
+        id: 99, nested: [],
+        game: { id: 99, type: 2, rename: '', name: 'Catan: Seafarers', originalName: 'Catan: Seafarers', published: 1997, contains: [] },
+        users: { status: statuses([501]) }
+      }],
+      contains: []
+    }
+  };
+  fs.writeFileSync(`${importDir}/dump.json`, JSON.stringify(dump));
+
+  let lib = (await req('GET', '/api/games')).json;
+  assert.deepEqual(lib.games, [], 'no library before the first import');
+  assert.ok(lib.imports.includes('dump.json'), 'a dump dropped into bgg-import is offered');
+  ok('an empty library reads back empty rather than erroring');
+
+  for (const [file, needle] of [
+    ['../db.json', 'must be a .json or .csv'],
+    ['..\\db.json', 'must be a .json or .csv'],
+    ['nope.json', 'No import file'],
+    ['notes.txt', 'must be a .json or .csv']
+  ]) {
+    const bad = await req('POST', '/api/games/import', { file });
+    assert.equal(bad.status, 400, `${file} should be refused`);
+    assert.ok(bad.json.error.includes(needle), `${file}: ${bad.json.error}`);
+  }
+  ok('path traversal and unsupported extensions are refused');
+
+  assert.equal((await req('POST', '/api/games/import', { file: 'dump.json' })).status, 200);
+  lib = (await req('GET', '/api/games')).json;
+  assert.equal(lib.games.length, 2, 'two base games; the expansion is not a row of its own');
+  assert.equal(lib.meta.expansion_count, 1, 'the expansion is attached to its parent');
+  assert.equal(lib.users.length, 3, 'the group members come across');
+
+  const catan = lib.games.find(g => g.id === 13);
+  assert.equal(catan.original_name, 'Die Siedler von Catan', 'the original name is kept alongside');
+  assert.equal(catan.published, 1995);
+  assert.deepEqual(catan.status.own, [501, 502], 'ownership is a list of BGG user ids');
+  assert.deepEqual(catan.status.prev_owned, [], 'run-together source keys are spelled out');
+  assert.equal(catan.rating.bgg_average, 7.1, 'BGG average');
+  assert.equal(catan.rating.group_average, 6.4, 'Geekgroup average');
+  assert.equal(catan.plays.total_plays, 9);
+  assert.equal(catan.plays.last_play, '2020-08-01', 'epoch seconds become a calendar date');
+  assert.deepEqual(catan.expansions.map(e => e.name), ['Catan: Seafarers']);
+  ok('a dump normalizes into the clean model, expansions folded into their parent');
+
+  const chess = lib.games.find(g => g.id === 21);
+  assert.equal(chess.name, 'House Rules Chess', 'a local rename wins over the catalogue name');
+  assert.equal(chess.rating.average, null, 'no ratings averages to nothing, not to zero');
+  assert.equal(chess.plays.last_play, null, 'never played reads as null, not 1970');
+  ok('renames, missing ratings and missing plays all degrade honestly');
+
+  // Nobody is linked yet, so "our average" has nobody to restrict to and falls
+  // back to every rater: (6.0 + 8.0 + 9.5) / 3.
+  assert.equal(catan.rating.average, 7.83, 'unlinked, the average covers every rater');
+
+  const ada = (await req('POST', '/api/players', { name: 'Ada' })).json.players.find(p => p.name === 'Ada');
+  assert.equal((await req('PATCH', `/api/players/${ada.id}`, { bgg_user_id: 501, bgg_username: 'ada' })).status, 200);
+  const grace = (await req('POST', '/api/players', { name: 'Grace' })).json.players.find(p => p.name === 'Grace');
+  await req('PATCH', `/api/players/${grace.id}`, { bgg_user_id: 502, bgg_username: 'grace' });
+
+  const clash = await req('PATCH', `/api/players/${grace.id}`, { bgg_user_id: 501, bgg_username: 'ada' });
+  assert.equal(clash.status, 400, 'two players cannot share one BGG account');
+  assert.ok(clash.json.error.includes('already linked to Ada'), clash.json.error);
+  ok('a BGG account links to exactly one player');
+
+  assert.equal((await req('POST', '/api/games/rebuild')).status, 200);
+  lib = (await req('GET', '/api/games')).json;
+  const relinked = lib.games.find(g => g.id === 13);
+  assert.equal(relinked.rating.average, 7, 'with Ada and Grace linked, the average is theirs alone: (6.0 + 8.0) / 2');
+  assert.equal(relinked.rating.bgg_average, 7.1, 'the BGG average is untouched by who we linked');
+  assert.equal(lib.users.find(u => u.id === 501).discord, null, 'an unlinked Discord stays null');
+  ok('linking a player narrows the group average to us, without refetching');
+
+  const unlinked = await req('PATCH', `/api/players/${grace.id}`, { bgg_user_id: null });
+  assert.equal(unlinked.json.players.find(p => p.id === grace.id).bgg_user_id, null);
+  ok('a BGG link can be cleared again');
+
+  // Sync is configured entirely through settings, and refuses to run unconfigured.
+  const unconfigured = await req('POST', '/api/games/sync');
+  assert.equal(unconfigured.status, 400);
+  assert.ok(unconfigured.json.error.includes('No collection request'), unconfigured.json.error);
+
+  // BGG_APP_TOKEN lives in the environment, never in db.json, and never in
+  // a payload the browser can read. The Geekgroup token below is a different
+  // secret (bggTokenSet); this one is the XML API bearer.
+  const prevAppToken = process.env.BGG_APP_TOKEN;
+  const APP_TOKEN = 'web-test-bgg-app-token';
+  delete process.env.BGG_APP_TOKEN;
+  const noApp = (await req('GET', '/api/state')).json.settings;
+  assert.equal(noApp.bggAppTokenSet, false);
+  assert.equal(noApp.bggAppToken, undefined);
+  const missing = await req('POST', '/api/games/sync', { source: 'bgg' });
+  assert.equal(missing.status, 400);
+  assert.match(missing.json.error, /BGG_APP_TOKEN/);
+
+  process.env.BGG_APP_TOKEN = APP_TOKEN;
+  const flagged = (await req('GET', '/api/state')).json;
+  assert.equal(flagged.settings.bggAppTokenSet, true, 'the panel is told the XML API token is set');
+  assert.equal(flagged.settings.bggAppToken, undefined, 'but never what it is');
+  assert.ok(!JSON.stringify(flagged).includes(APP_TOKEN), 'the token is absent from state');
+
+  await req('PATCH', `/api/players/${ada.id}`, { bgg_user_id: null });
+  const noNames = await req('POST', '/api/games/sync', { source: 'bgg' });
+  assert.equal(noNames.status, 400);
+  assert.match(noNames.json.error, /BGG username/);
+  assert.ok(!JSON.stringify(noNames.json).includes(APP_TOKEN));
+  await req('PATCH', `/api/players/${ada.id}`, { bgg_user_id: 501, bgg_username: 'ada' });
+  if (prevAppToken === undefined) delete process.env.BGG_APP_TOKEN;
+  else process.env.BGG_APP_TOKEN = prevAppToken;
+  ok('the BGG XML API token is env-only and never returned to the browser');
+
+  delete process.env.BGG_APP_TOKEN;
+  const noUser = await req('POST', '/api/games/user', { username: 'ada' });
+  assert.equal(noUser.status, 400);
+  assert.match(noUser.json.error, /BGG_APP_TOKEN/);
+  process.env.BGG_APP_TOKEN = APP_TOKEN;
+  assert.equal((await req('POST', '/api/games/user', { username: '' })).status, 400);
+  if (prevAppToken === undefined) delete process.env.BGG_APP_TOKEN;
+  else process.env.BGG_APP_TOKEN = prevAppToken;
+  ok('a username lookup refuses to run without the XML API token');
+
+  const badUrl = await req('PATCH', '/api/settings', { bggCollectionUrl: 'not-a-url' });
+  assert.equal(badUrl.status, 400, 'a collection URL has to look like one');
+
+  const configured = (await req('PATCH', '/api/settings', {
+    bggCollectionUrl: 'https://api.geekgroup.app/api/groups/collection.json?page={page}',
+    bggToken: 'a-geekgroup-token'
+  })).json;
+  assert.equal(configured.settings.bggCollectionUrl, 'https://api.geekgroup.app/api/groups/collection.json?page={page}');
+  assert.equal(configured.settings.bggTokenSet, true, 'the panel is told a token is set');
+  assert.equal(configured.settings.bggToken, undefined, 'but the token itself never leaves the server');
+  ok('the collection URL is validated and the access token is write-only');
+
+  assert.equal((await req('GET', '/api/games/sync')).json.status, 'ok', 'sync status is pollable');
+
+  // Saving just the collection fields must not disturb everything else, which
+  // is what the card's own Save button does.
+  const priorSettings = (await req('GET', '/api/state')).json.settings;
+  const only = (await req('PATCH', '/api/settings', { bggToken: 'a-replacement-token' })).json;
+  assert.equal(only.settings.bggTokenSet, true, 'the token survives a partial save');
+  assert.equal(only.settings.reminderTime, priorSettings.reminderTime, 'and an unsent field is left alone');
+  assert.equal(only.settings.timezone, priorSettings.timezone, 'as is the timezone');
+
+  // Omitting the key entirely means "leave it", not "clear it" -- the panel
+  // sends nothing when the box is empty, and the stored token has to survive.
+  const untouched = (await req('PATCH', '/api/settings', { bggCollectionUrl: 'https://example.test/c.json' })).json;
+  assert.equal(untouched.settings.bggTokenSet, true, 'an absent bggToken leaves the saved one in place');
+  ok('the token survives saves that do not mention it');
+
+  // Clearing the URL and testing needs no network, and is the branch worth
+  // pinning: the rest of the probe is one HTTP call to somebody else's server.
+  await req('PATCH', '/api/settings', { bggCollectionUrl: '' });
+  const noUrl = await req('POST', '/api/games/test');
+  assert.equal(noUrl.status, 400);
+  assert.ok(noUrl.json.error.includes('No collection request'), noUrl.json.error);
+  assert.equal((await req('GET', '/api/state')).json.settings.bggTokenSet, true,
+    'clearing the URL does not clear the token');
+  ok('the connection test refuses to run unconfigured, and says why');
+
+  // ---------- 16. CAPTURED REQUEST ----------
+  console.log('\n16. Captured collection request');
+  // The collection endpoint is an undocumented POST: the group lives in a
+  // multi-kilobyte JSON body and the sign-in rides on session cookies, so the
+  // panel stores a whole request copied out of the browser rather than trying
+  // to rebuild one from a URL and a token.
+  const curl = [
+    "curl 'https://api.geekgroup.app/api/groups/collection.json'",
+    '--compressed',
+    '-X POST',
+    "-H 'User-Agent: Mozilla/5.0'",
+    "-H 'Content-Type: application/json'",
+    "-H 'Authorization: sekrit-token'",
+    "-H 'Host: api.geekgroup.app'",
+    "-H 'Content-Length: 24'",
+    "-b 'token=sekrit-token; fueldid=abc'",
+    `--data-raw '${JSON.stringify({ page: 1, sort: 'name', filters: { own: true } })}'`
+  ].join(' \\\n  ');
+
+  const notCurl = await req('PATCH', '/api/settings', { bggRequest: 'not a curl command' });
+  assert.equal(notCurl.status, 400);
+  assert.ok(notCurl.json.error.includes('cURL'), notCurl.json.error);
+
+  const saved = (await req('PATCH', '/api/settings', { bggRequest: curl })).json;
+  const cap = saved.settings.bggRequest;
+  assert.equal(cap.method, 'POST', 'the method is taken from the capture, not assumed');
+  assert.equal(cap.host, 'api.geekgroup.app');
+  assert.ok(cap.bodyBytes > 0, 'the JSON body is kept -- it is what selects the group');
+  assert.deepEqual(cap.secrets, ['Authorization', 'Cookie'], 'and so are the credentials');
+  assert.ok(!JSON.stringify(cap).includes('sekrit-token'),
+    'but the panel is told only that they exist, never what they are');
+  // Connection-level headers describe the browser's socket, not the request.
+  assert.ok(!cap.headers.includes('Host'), 'Host is dropped');
+  assert.ok(!cap.headers.includes('Content-Length'), 'so is Content-Length');
+  assert.equal(saved.settings.bggCollectionUrl, 'https://api.geekgroup.app/api/groups/collection.json',
+    'the URL is kept in step so the rest of the panel can show it');
+  ok('a copied cURL command is parsed, stored, and described without leaking its secrets');
+
+  const { parseCurl } = await import('./bgg/curl.js');
+  const { bodyForPage } = await import('./bgg/geekgroup.js');
+  // Windows browsers copy with double quotes and ^ escapes instead.
+  const win = parseCurl(`curl "https://api.geekgroup.app/api/groups/collection.json" ^\n  -X POST ^\n  -H "Authorization: abc" ^\n  --data-raw "{\\"page\\":1}"`);
+  assert.equal(win.url, 'https://api.geekgroup.app/api/groups/collection.json');
+  assert.equal(win.method, 'POST');
+  assert.equal(win.headers.Authorization, 'abc');
+  assert.equal(win.body, '{"page":1}');
+  ok('the Windows flavour of Copy as cURL parses too');
+
+  // Paging has to reach into the body, since that is where the page number is.
+  assert.equal(JSON.parse(bodyForPage('{"page":1,"sort":"name"}', 7)).page, 7);
+  assert.equal(JSON.parse(bodyForPage('{"sort":"name"}', 3)).page, 3, 'added when absent');
+  assert.equal(bodyForPage('{"p":{page}}', 4), '{"p":4}', 'an explicit placeholder wins');
+  assert.equal(bodyForPage(null, 2), null, 'a bodyless request stays bodyless');
+  assert.equal(bodyForPage('not json', 2), 'not json', 'and a non-JSON body is replayed untouched');
+  ok('the page number is substituted into the request body');
+
+  // A saved capture must not be wiped by an unrelated settings save.
+  await req('PATCH', '/api/settings', { displayName: 'Klatch Night' });
+  assert.equal((await req('GET', '/api/state')).json.settings.bggRequest.method, 'POST',
+    'an unrelated save leaves the capture alone');
+  const cleared = (await req('PATCH', '/api/settings', { bggRequest: '' })).json;
+  assert.equal(cleared.settings.bggRequest, null, 'and an explicit empty clears it');
+  ok('the capture survives unrelated saves and clears only on request');
+  assert.ok(
+    (await req('GET', '/')).headers.get('content-security-policy').includes('cf.geekdo-static.com'),
+    'avatars need the CDN in img-src'
+  );
+  assert.ok(
+    (await req('GET', '/')).headers.get('content-security-policy').includes("default-src 'self'"),
+    'and nothing else about the policy loosened'
+  );
+  ok('the CSP allows BGG avatars and nothing more');
+
+  // ---------- 15. CSV EXPORT IMPORT ----------
+  console.log('\n15. CSV import');
+  // Geekgroup also exports a CSV covering the whole collection in one file. It
+  // is the only source that needs no token, and it costs the per-person detail:
+  // an owner count instead of names, no per-member ratings, no last-play date.
+  fs.writeFileSync(`${importDir}/export.csv`, [
+    '"Game ID",Name,Expansion,Owners,"Min Players","Max Players","Recommended Players","Best Players","Min Duration","Max Duration",Weight,Plays,"Group Rating","Group Votes","BGG Rating",Rank,"Estimated Value"',
+    '13,Catan,-,2,3,4,"3,4","3,4",60,120,2.3,9,6.4,2,7.1,500,42.5',
+    '99,"Catan: Seafarers",Y,1,3,4,"3,4",4,90,150,2.5,0,-,0,7.3,0,25',
+    '21,"Chess, with commas",-,0,2,2,2,2,10,60,3.7,0,-,0,7.2,-,10'
+  ].join('\n'));
+
+  const csvList = (await req('GET', '/api/games')).json.imports;
+  assert.ok(csvList.includes('export.csv'), 'a .csv is offered alongside .json dumps');
+
+  assert.equal((await req('POST', '/api/games/import', { file: 'export.csv' })).status, 200);
+  const csvLib = (await req('GET', '/api/games')).json;
+  assert.equal(csvLib.meta.source, 'csv', 'the library records which source built it');
+  assert.equal(csvLib.games.length, 3, 'expansions are flat rows: the CSV carries no parent link');
+
+  const csvCatan = csvLib.games.find(g => g.id === 13);
+  assert.deepEqual(csvCatan.status.own, [], 'the CSV cannot name owners');
+  assert.equal(csvCatan.owner_count, 2, 'but it does count them, and that is not "nobody"');
+  assert.equal(csvCatan.rating.average, null, 'no per-member ratings to average');
+  assert.equal(csvCatan.rating.group_average, 6.4);
+  assert.equal(csvCatan.rating.bgg_average, 7.1);
+  assert.equal(csvCatan.plays.total_plays, 9);
+  assert.equal(csvCatan.plays.last_play, null, 'the export drops the date, keeping only the count');
+  assert.deepEqual(csvCatan.details.players_best, [3, 4], 'a quoted comma-separated column parses as a list');
+  assert.equal(csvCatan.details.weight, 2.3);
+  assert.ok(csvLib.games.find(g => g.id === 99).is_expansion, 'the Expansion column is honoured');
+  assert.equal(csvLib.games.find(g => g.id === 21).name, 'Chess, with commas', 'quoted commas survive');
+  assert.equal(csvLib.games.find(g => g.id === 21).details.rank, null, '"-" is not zero');
+  ok('a CSV export imports, with its per-person gaps reported rather than faked');
+
+  // Rebuild reads whatever the last run archived; a CSV run is one file, not pages.
+  assert.equal((await req('POST', '/api/games/rebuild')).status, 200);
+  assert.equal((await req('GET', '/api/games')).json.games.length, 3,
+    'rebuilding a CSV-sourced library does not empty it');
+  ok('rebuild works against a CSV archive as well as a JSON one');
+
+  // Back to the richer source, which must fully replace the thinner one.
+  await req('POST', '/api/games/import', { file: 'dump.json' });
+  const back = (await req('GET', '/api/games')).json;
+  assert.equal(back.games.length, 2, 'the JSON import replaces the CSV library outright');
+  assert.deepEqual(back.games.find(g => g.id === 13).status.own, [501, 502], 'named owners are back');
+  const backDetails = back.games.find(g => g.id === 13).details;
+  assert.equal(backDetails.players_min, 3, 'the JSON path fills in the same details the CSV does');
+  assert.deepEqual(backDetails.players_best, [4], 'including the community best-player vote');
+  assert.equal(backDetails.weight, 2.3);
+  assert.equal(backDetails.value, 42.5);
+  ok('the two sources produce one model, and the richer one wins');
+
+  // The whole reason the library lives in its own file.
+  assert.ok(!JSON.parse(fs.readFileSync(`${DIR}/db.json`, 'utf-8')).games, 'db.json stays free of the library');
+  assert.ok(fs.existsSync(`${DIR}/games.json`), 'the library has its own file');
+
+  // Four imports have run by now; the archive keeps the newest three.
+  const runs = fs.readdirSync(`${DIR}/bgg-raw`).sort();
+  assert.equal(runs.length, 3, 'the raw archive is capped rather than growing forever');
+  const archived = runs.flatMap(r => fs.readdirSync(`${DIR}/bgg-raw/${r}`));
+  assert.ok(archived.some(f => f.endsWith('.csv')), 'a CSV run is archived as a CSV');
+  assert.ok(archived.some(f => f.endsWith('.json')), 'and JSON runs as JSON pages');
+  ok('the library is stored apart from db.json, with its raw source kept and capped');
 
   console.log(`\n✅ ALL WEB TESTS PASSED (${pass} checks) ✅`);
 } finally {

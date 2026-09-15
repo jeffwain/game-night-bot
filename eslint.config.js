@@ -18,13 +18,17 @@ export default [
     },
   },
   {
-    // The control panel's client-side script. Same lint rules, but it runs in
-    // a browser rather than in Node, so `document` and friends are the globals
-    // that exist and `process` is not.
+    // The control panel's client-side scripts. Same lint rules, but they run
+    // in a browser rather than in Node, so `document` and friends are the
+    // globals that exist and `process` is not.
+    //
+    // ES modules: app.js imports the shared scorer from search.js, which the
+    // Discord command layer imports as well so the two surfaces cannot rank
+    // search results differently.
     files: ['src/web/public/**/*.js'],
     languageOptions: {
       ecmaVersion: 'latest',
-      sourceType: 'script',
+      sourceType: 'module',
       globals: { ...globals.browser },
     },
   },

@@ -20,12 +20,25 @@ services:
     container_name: game-night-bot
     restart: unless-stopped
 
+    # `:2` is a FLOATING tag -- it is re-pointed at each new 2.x release. Docker
+    # does not re-check a tag it already has locally, so `docker compose up -d`
+    # on its own will happily keep running a months-old image and report no
+    # error at all. This makes `up` re-resolve the tag every time.
+    #
+    # Only affects explicit `up`; `restart: unless-stopped` still brings the
+    # existing container back after a reboot without touching the network.
+    pull_policy: always
+
     environment:
       - NODE_ENV=production
 
       # REQUIRED. Read from the .env file beside this compose file.
       # You can also skip .env entirely and put the token in data/.env instead.
       - DISCORD_TOKEN=${DISCORD_TOKEN:-}
+
+      # Optional. BoardGameGeek XML API token. Prefer putting it in data/.env
+      # so it is not sitting next to compose. An empty value here is ignored.
+      - BGG_APP_TOKEN=${BGG_APP_TOKEN:-}
 
       # Your timezone. Changeable later from Discord with /admin config.
       - TZ=${TZ:-America/Chicago}

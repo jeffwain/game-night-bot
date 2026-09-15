@@ -314,7 +314,12 @@ export function addPlayer(name, discordId = null) {
     id: nextId,
     name: normalizedName,
     discord_id: discordId ? String(discordId).trim() : null,
-    is_active: true
+    is_active: true,
+    // Filled in from the Players tab once a collection sync has discovered
+    // who is in the group. Records written before this existed simply lack
+    // the keys, and everything downstream reads a missing key as null.
+    bgg_user_id: null,
+    bgg_username: null
   };
 
   db.players.push(newPlayer);
@@ -1065,6 +1070,44 @@ export function renamePlayer(currentName, newName) {
   if (clash) throw new Error(`Player with name "${normalized}" already exists.`);
 
   player.name = normalized;
+  writeDbSync(db);
+  return player;
+}
+
+// Ties a roster row to a BoardGameGeek account. That link is what turns a
+// column of numeric BGG ids in the collection into "owned by Phil and Miguel",
+// and what scopes the group rating average to us rather than to every stranger
+// who happens to share the Geekgroup.
+//
+// Pass null for both to unlink. The id is the join key; the username is carried
+// alongside so the panel can show who a player is linked to without waiting on
+// a sync.
+export function setPlayerBgg(playerId, bggUserId = null, bggUsername = null) {
+  const db = readDb();
+  const player = db.players.find(p => p.id === Number(playerId));
+  if (!player) throw new Error(`Player ${playerId} not found.`);
+
+  if (bggUserId === null || bggUserId === undefined || bggUserId === '') {
+    player.bgg_user_id = null;
+    player.bgg_username = null;
+    writeDbSync(db);
+    return player;
+  }
+
+  const id = Number(bggUserId);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new Error('A BGG user id must be a positive number.');
+  }
+
+  // Two players sharing one BGG account would double-count that person in
+  // every ownership list and every average.
+  const clash = db.players.find(p => p.id !== player.id && Number(p.bgg_user_id) === id);
+  if (clash) {
+    throw new Error(`BGG account is already linked to ${clash.name}.`);
+  }
+
+  player.bgg_user_id = id;
+  player.bgg_username = bggUsername ? String(bggUsername).trim() : null;
   writeDbSync(db);
   return player;
 }

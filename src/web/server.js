@@ -24,12 +24,18 @@ const MIME = {
   '.json': 'application/json; charset=utf-8'
 };
 
-// Read-once cache. These files never change while the container runs, so the
+// Read-once cache. In a running container these files never change, so the
 // alternative is a disk hit on every page load for no benefit.
+//
+// Off outside production, because the first thing anyone customising this panel
+// does is edit app.css and reload -- and a cache that survives the edit makes it
+// look like the change did nothing. `npm run web` therefore picks up edits on
+// refresh, while the shipped container still reads each file exactly once.
+const CACHE_ASSETS = process.env.NODE_ENV === 'production';
 const assetCache = new Map();
 
 function readAsset(name) {
-  if (assetCache.has(name)) return assetCache.get(name);
+  if (CACHE_ASSETS && assetCache.has(name)) return assetCache.get(name);
   const full = path.join(ASSET_DIR, name);
   // Defence in depth: nothing builds `name` from user input today, and this
   // makes sure that stays true if a future route does.
@@ -41,7 +47,7 @@ function readAsset(name) {
     // Cache the miss too, so a typo'd route cannot turn into a stat() per hit.
     entry = null;
   }
-  assetCache.set(name, entry);
+  if (CACHE_ASSETS) assetCache.set(name, entry);
   return entry;
 }
 
@@ -108,9 +114,11 @@ function send(res, status, type, body, extraHeaders = {}) {
     'Content-Type': type,
     'Content-Length': Buffer.byteLength(body),
     'Cache-Control': 'no-store',
-    // The panel loads nothing off-origin, so lock that down rather than
-    // leaving a schedule editor open to an injected script.
-    'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:",
+    // The panel loads no off-origin *code*, so lock that down rather than
+    // leaving a schedule editor open to an injected script. Images are the one
+    // exception: member avatars are served from BGG's CDN, and proxying them
+    // would mean a cache directory to maintain for the sake of four thumbnails.
+    'Content-Security-Policy': "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cf.geekdo-images.com https://cf.geekdo-static.com",
     'X-Content-Type-Options': 'nosniff',
     'Referrer-Policy': 'no-referrer',
     ...extraHeaders
@@ -196,7 +204,10 @@ async function route(req, res, deps) {
   if (req.method === 'GET' && (pathname === '/' || pathname === '/index.html')) {
     return sendAsset(res, 'admin.html');
   }
-  if (req.method === 'GET' && (pathname === '/app.css' || pathname === '/app.js')) {
+  // search.js is imported by app.js as an ES module, and imported again by the
+  // Discord command layer, so both surfaces rank search results identically.
+  if (req.method === 'GET' &&
+      (pathname === '/app.css' || pathname === '/app.js' || pathname === '/search.js')) {
     return sendAsset(res, pathname.slice(1));
   }
 
@@ -261,9 +272,9 @@ export function startWebServer(deps = {}) {
   });
 
   server.listen(port, host, () => {
-    console.log(`🌐 Web control panel listening on ${host}:${port}`);
-    console.log(`   • Control panel: http://<this-machine>:${port}/`);
-    console.log(`   • Public page:   http://<this-machine>:${port}/public`);
+    console.log(`🌐 Web control panel listening on http://${host}:${port}`);
+    console.log(`   • Control panel: http://localhost:${port}/`);
+    console.log(`   • Public page:   http://localhost:${port}/public`);
     if (String(process.env.WEB_ALLOW_REMOTE).toLowerCase() === 'true') {
       console.warn('   ⚠️  WEB_ALLOW_REMOTE=true: the panel answers any address. Put auth in front of it.');
     }

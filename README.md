@@ -82,6 +82,7 @@ any of it per-role under **Server Settings → Integrations → (bot)**.
 | **Anyone** | |
 |---|---|
 | `/schedule` | Who's hosting, and when |
+| `/games name: <name>` | Search what the group owns. Fuzzy — `trmis` finds *Terraforming Mars*. Expansions are hidden unless you add `expansions: True` |
 | `/player list` | The roster |
 | `/help` | Command guide, in Discord |
 
@@ -148,11 +149,13 @@ Set it from Discord with `/admin config`. Only these come from the environment:
 | Variable | Needed | What it does |
 |---|---|---|
 | `DISCORD_TOKEN` | **yes** | Your bot token |
+| `BGG_APP_TOKEN` | no | BoardGameGeek XML API application token (`Authorization: Bearer`). Register at [boardgamegeek.com/applications](https://boardgamegeek.com/applications). Keep it in `data/.env`, never in git |
 | `TZ` | recommended | Starting timezone, until you set one in Discord |
 | `CHECK_INTERVAL_MS` | no | Scan interval, default 1 hour |
 | `WEB_PORT` | no | Control panel + public page port, default `8120`. `0` disables both |
 | `WEB_HOST` | no | Bind address inside the container, default `0.0.0.0` |
 | `WEB_ALLOW_REMOTE` | no | `true` drops the private-address check. Only with your own auth in front |
+| `NODE_ENV` | no | `production` in the shipped image. Anything else re-reads the panel's static files per request, so edits show up on refresh |
 
 The timezone you set in Discord wins over `TZ`, and it's the single source for
 every date the bot calculates.
@@ -168,6 +171,14 @@ Backups land in `data/backups/`: **5 rolling** snapshots for fine-grained undo,
 plus **7 daily** ones so a week of history survives a busy day. If `db.json`
 ever fails to parse, the bot restores from the newest good backup on startup.
 
+The game library is deliberately **not** in `db.json` — it would multiply the
+size of every backup for something no one edits by hand. It lives in
+`data/games.json`, and the raw pages each sync fetched are kept verbatim in
+`data/bgg-raw/` (newest three runs). That archive is the library's backup:
+`games.json` can always be rebuilt from it, and fields the panel does not
+surface yet — weight, player counts, playing time — are a re-parse away rather
+than another crawl.
+
 ---
 
 ## Updating
@@ -178,7 +189,24 @@ docker compose pull && docker compose up -d
 
 `:2` follows every 2.x release. `:2.0` is patches only. `:2.0.0` never moves.
 
-On Synology, use **Action → Reset** on the project after pulling.
+**The `pull` is not optional.** `:2` is a floating tag, and Docker does not
+re-check a tag it already has locally — `docker compose up -d` on its own will
+keep running a months-old image and report success while doing it. The compose
+file sets `pull_policy: always` so `up` re-resolves the tag on its own, but if
+you removed that, `pull` first.
+
+On Synology, the Container Manager project UI does not reliably re-pull either.
+Either use **Action → Reset** *after* pulling the image, or run the two commands
+above over SSH from the project directory.
+
+To check what is actually running, ask the container rather than the UI:
+
+```bash
+docker compose exec game-night-bot node -p "require('/app/package.json').version"
+```
+
+That reads the version out of the running image, so it cannot be fooled by a
+stale tag or a cached layer. `/admin status` in Discord reports the same number.
 
 ---
 
@@ -189,10 +217,23 @@ that are awkward in a chat box.
 
 | Tab | What you can do |
 |---|---|
-| **Upcoming** | Change any date or host inline, add a one-off night, skip a night (rest of the season slides forward), delete one (nothing else moves) |
-| **History** | Record whether each past night was played or called off, see who RSVP'd, and write notes — what got played, who turned up, why it was called off |
-| **Players** | Rename, link a Discord ID, bench someone, add or remove |
-| **Settings** | Reminder time, timezone, channels — saved settings reschedule the cron immediately, no restart |
+| **Upcoming** | Change any date or host straight from the row; everything else is behind **Edit** |
+| **History** | Record whether each past night was played or called off, see who replied, and write notes |
+| **Players** | Rename, link a Discord ID and a BoardGameGeek account, bench someone, add or remove |
+| **Games** | Browse and search what the group collectively owns, and sync it from BoardGameGeek |
+| **Settings** | Name the group, set the reminder time, timezone and channels — saving reschedules the cron immediately, no restart |
+
+**Edit** on any night opens one dialog holding the rarer and riskier things:
+notes, replies, the outcome, the "already sent" flags, calling the night off,
+and deleting it. Rows stay readable whether you have five nights or fifty.
+
+A fresh install opens on a short setup checklist rather than empty tables, and
+anything that cannot work yet — randomize with nobody in the rotation, add a
+night with no players — is disabled with the reason next to it.
+
+**Naming it.** Set a display name under Settings and it replaces "Game Night"
+in the panel, the browser tab and the public page. Every install is somebody
+else's group; nothing is hardcoded to mine.
 
 **Randomizing** is preview-first: pick a start date and interval, hit
 *Randomize*, and you get a proposed rotation you can reroll, re-date, reassign
@@ -204,6 +245,80 @@ never rewritten by a reroll. The shuffle itself is `rotation.js`, shared with
 Every edit goes through the same `database.js` functions the slash commands
 use, so the two stay in step. An open tab re-reads every 30 seconds, so a change
 made in Discord shows up without a refresh.
+
+### The game library
+
+The **Games** tab lists what the group owns between them, with each title's
+average rating from your own members, the wider Geekgroup average, BGG's global
+average, who owns a copy, and when it was last played. The search box is fuzzy —
+`trmis` finds *Terraforming Mars* — and it searches expansion names too, showing
+the base game when one of its expansions matches.
+
+Collections can come from **BoardGameGeek's XML API** (recommended once you have
+an application token) or from **[Geekgroup](https://geekgroup.app)**.
+
+**Sync from BGG.** Put `BGG_APP_TOKEN` in `data/.env` — register an application
+at [boardgamegeek.com/applications](https://boardgamegeek.com/applications), then
+create a token. Link each player to their BGG account on the Players tab, then
+press **Sync from BGG**. Requests go to `boardgamegeek.com/xmlapi2` (not `www`)
+with `Authorization: Bearer`. The token never leaves the server and is not
+stored in `db.json`. You will not get Geekgroup's group-average or last-played
+columns this way; you will get who owns what, our ratings, and expansions folded
+under their base game.
+
+**Setting up a Geekgroup sync.** On geekgroup.app, open your group's collection with the
+browser's network tab recording. Right-click the `collection.json` request →
+**Copy → Copy as cURL**, and paste the whole thing into *Settings → Board game
+collection → Captured request*. Press **Save request**, then **Test**.
+
+It has to be the entire request, not just a URL. The collection endpoint is an
+undocumented `POST` whose multi-kilobyte JSON body carries the group and its
+filters, and whose sign-in rides on session cookies alongside an `Authorization`
+header. Nothing short of the real request reproduces it.
+
+The failure mode is the reason for the **Test** button. Ask that endpoint for a
+collection it does not think you are entitled to and it does not return a 401 —
+it returns **200 with a large public group** (at the time of writing, a group
+called *Klatch*: 15,832 games across 214 pages). A sync that "worked" and filled
+your library with ten thousand strangers' games is worse than one that failed,
+so the sync checks the page count and stops. Test tells you which collection came
+back before you commit to a crawl.
+
+The capture contains live session credentials. It is stored in `db.json` and
+never sent back to the browser — the panel only reports the method, host, header
+*names* and body size, so you can confirm what it saved without it being readable
+from a screen. Sessions expire; when Test starts reporting a public group again,
+copy a fresh request from a logged-in tab.
+
+**Linking people.** Sync once so the panel learns who is in the group, then pick
+each person's BGG account from the dropdown on their row in **Players**. That
+link is what turns a column of numeric BGG ids into names, and what scopes the
+"our average" column to your group rather than to everyone who shares the
+Geekgroup.
+
+**Importing instead.** Drop a file into `data/bgg-import/` and import it from the
+Games tab, no network and no token needed. Two formats work:
+
+| File | What you get |
+|---|---|
+| `.json` — a saved collection API response | Everything: who owns what by name, per-member ratings, last-played dates, expansions folded into their base game |
+| `.csv` — Geekgroup's collection export | The whole collection in one file, plus weight, player counts and playing time — but ownership only as a **count**, no per-member ratings, no last-played date, and expansions as flat rows |
+
+The CSV is the quickest way to get the full library browsable; the JSON is what
+the per-person columns need. The Games tab says which one built the library, and
+the "Owned by" column shows a count rather than pretending nobody owns a game.
+
+**From Discord.** `/games name: <name>` searches the same library and reports the
+same columns — your average, the group average, BGG's, who owns a copy, and when
+it was last played. Expansions are hidden unless you pass `expansions: True`,
+though a base game found *through* one of its expansions still shows up and says
+which expansion matched. The panel and the bot import the same scorer
+(`src/web/public/search.js`), so a result that ranks first in one ranks first in
+the other.
+
+**Rebuild** re-reads whatever the last import or sync archived, without
+refetching — run it after linking somebody to a BGG account, since that changes
+whose ratings count as yours.
 
 ### Access
 
@@ -263,8 +378,15 @@ your proxy rewrites the path prefix.
 npm install
 npm test      # database, feature regressions, rotation, web panel, release guards
 npm run lint
-npm start
+npm start     # the bot, plus the panel
+npm run web   # ONLY the panel, no Discord connection — for working on the UI
 ```
+
+`npm run web` serves the panel against `./data` with no gateway connection, so
+the header reads "Bot offline" and nothing is announced. Outside
+`NODE_ENV=production` the static files are re-read per request, so editing
+`app.css` and refreshing is enough — no restart. Point it somewhere harmless
+with `DB_DIR=./data-scratch npm run web`, since edits there write for real.
 
 Run from source instead of the published image:
 
@@ -350,7 +472,7 @@ pointed at.
 | `customId.js` | Component IDs, and translation of pre-2.0 ones |
 | `web/server.js` | The HTTP server, routing and the private-address gate |
 | `web/api.js` | The JSON API, a thin layer over `database.js` |
-| `web/public/` | The panel's three static files and the public page |
+| `web/public/` | The panel (`admin.html` + `app.css` + `app.js`) and the public page |
 
 The panel has **no dependencies and no build step** — `node:http`, one HTML
 file, one stylesheet, one script. Measured against the bot running alone, it

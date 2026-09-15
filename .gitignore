@@ -5,6 +5,11 @@ node_modules
 data/.env
 data/db.json
 data/backups/
+# Game library: rebuilt by a sync, with the raw pages it was built from.
+data/games.json
+data/*.tmp
+data/bgg-raw/
+data/bgg-import/
 docker-compose.yml
 
 # Test scratch dirs

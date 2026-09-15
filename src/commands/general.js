@@ -40,6 +40,8 @@ export async function cmdHelp(interaction) {
       {
         name: 'Everyone',
         value: '• `/schedule` — See who is hosting and when.\n' +
+               '• `/games name: <name>` — Search what the group owns. Fuzzy, so `trmis` finds ' +
+               'Terraforming Mars. Add `expansions: True` to include expansions.\n' +
                '• `/player list` — View the roster.\n' +
                '• `/help` — This guide.'
       },

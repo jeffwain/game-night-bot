@@ -4,165 +4,302 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
-<title>Game Night Control Panel</title>
+<meta name="color-scheme" content="light dark">
+<title>Game Night</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>&#127922;</text></svg>">
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
+
 <header>
-  <h1>Game Night</h1>
-  <span class="meta" id="bot-state"><span class="dot"></span>connecting…</span>
-  <span class="spacer"></span>
-  <span class="meta" id="clock"></span>
-  <button class="btn" id="refresh" title="Reload from db.json">Refresh</button>
+  <div class="shell head">
+    <h1 id="app-name">Game Night</h1>
+    <span class="status" id="bot-state"><span class="dot"></span>connecting…</span>
+    <span class="spacer"></span>
+    <span class="meta" id="clock"></span>
+    <button class="btn sm" id="refresh">Refresh</button>
+  </div>
 </header>
 
-<nav role="tablist">
-  <button role="tab" data-tab="upcoming" aria-selected="true">Upcoming<span class="count" id="count-upcoming">0</span></button>
-  <button role="tab" data-tab="history" aria-selected="false">History<span class="count" id="count-history">0</span></button>
-  <button role="tab" data-tab="players" aria-selected="false">Players<span class="count" id="count-players">0</span></button>
-  <button role="tab" data-tab="settings" aria-selected="false">Settings</button>
+<nav>
+  <div class="shell tabs" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-btn-upcoming" aria-controls="tab-upcoming" data-tab="upcoming" aria-selected="true">
+      Upcoming <span class="count" id="count-upcoming">0</span>
+    </button>
+    <button role="tab" id="tab-btn-history" aria-controls="tab-history" data-tab="history" aria-selected="false">
+      History <span class="count" id="count-history">0</span>
+    </button>
+    <button role="tab" id="tab-btn-players" aria-controls="tab-players" data-tab="players" aria-selected="false">
+      Players <span class="count" id="count-players">0</span>
+    </button>
+    <button role="tab" id="tab-btn-games" aria-controls="tab-games" data-tab="games" aria-selected="false">
+      Games <span class="count" id="count-games">0</span>
+    </button>
+    <button role="tab" id="tab-btn-settings" aria-controls="tab-settings" data-tab="settings" aria-selected="false">
+      Settings
+    </button>
+  </div>
 </nav>
 
-<main>
-  <div id="banner"></div>
+<main class="shell">
+  <div id="notices"></div>
 
-  <!-- ---------------------------------------------------------- UPCOMING -->
-  <section id="tab-upcoming">
+  <!-- ------------------------------------------------------------ UPCOMING -->
+  <section id="tab-upcoming" role="tabpanel" aria-labelledby="tab-btn-upcoming" tabindex="-1">
     <div class="card">
-      <h2>Upcoming nights</h2>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Date</th><th>Host</th><th>RSVPs</th><th>Sent</th><th></th></tr></thead>
-          <tbody id="upcoming-rows"></tbody>
-        </table>
-      </div>
+      <header>
+        <h2>Upcoming nights</h2>
+        <span class="sub" id="upcoming-sub"></span>
+      </header>
+      <div class="rows upcoming" id="upcoming-rows"></div>
+    </div>
+
+    <div class="card" id="schedule-card">
+      <header>
+        <h2>Schedule more nights</h2>
+        <span class="sub">Nothing is saved until you commit.</span>
+      </header>
       <div class="body">
-        <div class="row">
-          <div class="field">
-            <label for="add-date">Date</label>
-            <input type="date" id="add-date">
+        <fieldset id="rotation-fieldset">
+          <legend>Randomize a rotation</legend>
+          <div class="form-row">
+            <div class="field narrow">
+              <label for="rot-start">First night</label>
+              <input type="date" id="rot-start">
+            </div>
+            <div class="field tiny">
+              <label for="rot-interval">Repeat every</label>
+              <input type="number" id="rot-interval" min="1" max="365" inputmode="numeric">
+            </div>
+            <span class="suffix">days</span>
+            <div class="actions">
+              <button class="btn primary" id="rot-roll">Randomize</button>
+            </div>
           </div>
-          <div class="field">
-            <label for="add-host">Host</label>
-            <select id="add-host"></select>
+          <p class="hint" id="rot-hint">Every player in the rotation gets one night, in random order.</p>
+          <div id="rot-preview"></div>
+        </fieldset>
+
+        <fieldset style="margin-top:1rem">
+          <legend>Or add a single night</legend>
+          <div class="form-row">
+            <div class="field narrow">
+              <label for="add-date">Date</label>
+              <input type="date" id="add-date">
+            </div>
+            <div class="field narrow" style="flex:0 0 13rem">
+              <label for="add-host">Host</label>
+              <select id="add-host"></select>
+            </div>
+            <div class="actions">
+              <button class="btn" id="add-night">Add night</button>
+            </div>
           </div>
-          <button class="btn" id="add-night">Add one night</button>
-        </div>
+        </fieldset>
       </div>
+    </div>
+  </section>
+
+  <!-- ------------------------------------------------------------- HISTORY -->
+  <section id="tab-history" role="tabpanel" aria-labelledby="tab-btn-history" tabindex="-1" hidden>
+    <div class="card">
+      <header>
+        <h2>Past nights</h2>
+        <span class="sub" id="history-sub"></span>
+      </header>
+      <div class="rows history" id="history-rows"></div>
+    </div>
+  </section>
+
+  <!-- --------------------------------------------------------------- GAMES -->
+  <section id="tab-games" role="tabpanel" aria-labelledby="tab-btn-games" tabindex="-1" hidden>
+    <div class="card">
+      <header>
+        <h2>Games</h2>
+        <span class="sub" id="games-sub"></span>
+        <span class="spacer"></span>
+        <input id="games-search" type="search" placeholder="Search games…"
+               aria-label="Search games by name" autocomplete="off">
+        <button class="btn sm" id="games-sync">Sync now</button>
+        <button class="btn sm" id="games-sync-bgg">Sync from BGG</button>
+      </header>
+      <div class="rows games" id="game-rows"></div>
     </div>
 
     <div class="card">
-      <h2>Randomize a rotation</h2>
+      <header>
+        <h2>Import a dump</h2>
+        <span class="sub">For a collection saved to data/bgg-import/</span>
+      </header>
       <div class="body">
-        <div class="row">
+        <div class="form-row">
           <div class="field">
-            <label for="rot-start">Starts</label>
-            <input type="date" id="rot-start">
+            <label for="games-import-file">File</label>
+            <select id="games-import-file"></select>
           </div>
-          <div class="field">
-            <label for="rot-interval">Every (days)</label>
-            <input type="number" id="rot-interval" min="1" max="365" style="width:6rem">
+          <div class="actions">
+            <button class="btn" id="games-import">Import</button>
+            <button class="btn quiet" id="games-rebuild">Rebuild</button>
           </div>
-          <button class="btn primary" id="rot-roll">Randomize</button>
         </div>
-        <p class="hint">Every active player gets one night, in random order. Nothing is written until you commit.</p>
-        <div id="rot-preview"></div>
+        <p class="hint" id="games-import-hint"></p>
       </div>
     </div>
   </section>
 
-  <!-- ----------------------------------------------------------- HISTORY -->
-  <section id="tab-history" hidden>
+  <!-- ------------------------------------------------------------- PLAYERS -->
+  <section id="tab-players" role="tabpanel" aria-labelledby="tab-btn-players" tabindex="-1" hidden>
     <div class="card">
-      <h2>Past nights</h2>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Date</th><th>Host</th><th>Outcome</th><th>Who came</th><th></th></tr></thead>
-          <tbody id="history-rows"></tbody>
-        </table>
-      </div>
-      <div class="body"><p class="hint" id="history-summary"></p></div>
+      <header>
+        <h2>Players</h2>
+        <span class="sub" id="players-sub"></span>
+      </header>
+      <div class="rows players" id="player-rows"></div>
     </div>
-  </section>
 
-  <!-- ----------------------------------------------------------- PLAYERS -->
-  <section id="tab-players" hidden>
     <div class="card">
-      <h2>Players</h2>
-      <div class="scroll">
-        <table>
-          <thead><tr><th>Name</th><th>Discord ID</th><th>In rotation</th><th>Nights</th><th></th></tr></thead>
-          <tbody id="player-rows"></tbody>
-        </table>
-      </div>
+      <header><h2>Add a player</h2></header>
       <div class="body">
-        <div class="row">
+        <div class="form-row">
           <div class="field">
             <label for="new-player-name">Name</label>
-            <input id="new-player-name" placeholder="Jeff">
+            <input id="new-player-name" placeholder="Alice" autocomplete="off">
           </div>
           <div class="field">
-            <label for="new-player-discord">Discord ID (optional)</label>
-            <input id="new-player-discord" inputmode="numeric" placeholder="283253589525397524">
+            <label for="new-player-discord">Discord ID <span class="muted">(optional)</span></label>
+            <input id="new-player-discord" inputmode="numeric" placeholder="283253589525397524" autocomplete="off">
           </div>
-          <button class="btn" id="add-player">Add player</button>
+          <div class="actions">
+            <button class="btn primary" id="add-player">Add player</button>
+          </div>
         </div>
-        <p class="hint">Turn someone off to keep their history but skip them in future rotations. Removing deletes their scheduled nights too.</p>
+        <p class="hint">
+          Linking a Discord ID lets the bot DM this person and count their RSVPs.
+          In Discord, turn on Developer Mode, then right-click someone and choose Copy User ID.
+          You can add it later.
+        </p>
       </div>
     </div>
   </section>
 
-  <!-- ---------------------------------------------------------- SETTINGS -->
-  <section id="tab-settings" hidden>
+  <!-- ------------------------------------------------------------ SETTINGS -->
+  <section id="tab-settings" role="tabpanel" aria-labelledby="tab-btn-settings" tabindex="-1" hidden>
     <div class="card">
-      <h2>Bot settings</h2>
+      <header><h2>This group</h2></header>
       <div class="body">
-        <div class="row">
+        <div class="form-row">
           <div class="field">
-            <label for="set-reminder">Reminder time</label>
+            <label for="set-name">Display name</label>
+            <input id="set-name" maxlength="60" placeholder="Game Night" autocomplete="off">
+            <span class="hint">Shown here, in the browser tab, and on the public page.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>Reminders</h2></header>
+      <div class="body">
+        <div class="form-row">
+          <div class="field narrow">
+            <label for="set-reminder">Daily reminder time</label>
             <input type="time" id="set-reminder">
           </div>
           <div class="field">
             <label for="set-tz">Timezone</label>
-            <input id="set-tz" list="tz-list" style="width:14rem">
+            <input id="set-tz" list="tz-list" autocomplete="off">
             <datalist id="tz-list"></datalist>
           </div>
-        </div>
-        <div class="row" style="margin-top:.6rem">
-          <div class="field">
-            <label for="set-announce">Announcements channel ID</label>
-            <input id="set-announce" inputmode="numeric" style="width:15rem">
-          </div>
-          <div class="field">
-            <label for="set-notify">Notifications channel ID</label>
-            <input id="set-notify" inputmode="numeric" style="width:15rem">
-          </div>
-        </div>
-        <div class="row" style="margin-top:.8rem">
-          <button class="btn primary" id="save-settings">Save settings</button>
         </div>
         <p class="hint" id="settings-hint"></p>
       </div>
     </div>
 
     <div class="card">
-      <h2>Storage</h2>
+      <header><h2>Discord channels</h2></header>
+      <div class="body">
+        <div class="form-row">
+          <div class="field">
+            <label for="set-announce">Announcements channel ID</label>
+            <input id="set-announce" inputmode="numeric" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="set-notify">Notifications channel ID</label>
+            <input id="set-notify" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+        <p class="hint">Right-click a channel in Discord and choose Copy Channel ID. Leave blank to turn that posting off.</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>Board game collection</h2></header>
+      <div class="body">
+        <div class="field">
+          <label for="set-bgg-request">Captured request</label>
+          <textarea id="set-bgg-request" rows="4" spellcheck="false" autocomplete="off"
+                    data-1p-ignore data-lpignore="true"
+                    placeholder="curl 'https://api.geekgroup.app/api/groups/collection.json' -X POST -H 'Authorization: …' --data-raw '{…}'"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="actions">
+            <button class="btn primary" id="bgg-save">Save request</button>
+            <button class="btn quiet" id="bgg-test">Test</button>
+          </div>
+        </div>
+        <p class="hint">
+          On <a href="https://geekgroup.app" target="_blank" rel="noreferrer noopener">geekgroup.app</a>, open your
+          group's collection with the browser's network tab recording. Right-click the
+          <code>collection.json</code> request → <strong>Copy → Copy as cURL</strong>, and paste the whole thing
+          here. Then press <strong>Test</strong>.
+        </p>
+        <p class="hint">
+          It has to be the whole request, not just the URL: this is an undocumented <code>POST</code> whose
+          JSON body carries the group and filters, and whose sign-in rides on session cookies. Ask for it
+          without those and the API answers <em>200</em> with a large public group instead of an error — so
+          the sync checks the page count and stops rather than quietly pulling ten thousand strangers' games.
+        </p>
+        <p class="hint">
+          For a pull that does not depend on a browser session, set
+          <code>BGG_APP_TOKEN</code> in <code>data/.env</code> (register at
+          <a href="https://boardgamegeek.com/applications" target="_blank" rel="noreferrer noopener">boardgamegeek.com/applications</a>)
+          and link players to BGG accounts, then use <strong>Sync from BGG</strong> on the Games tab.
+          That token never comes back to this page.
+        </p>
+        <p class="hint" id="bgg-request-summary"></p>
+        <p class="hint" id="bgg-hint"></p>
+      </div>
+    </div>
+
+    <div class="card">
+      <header><h2>Storage</h2></header>
       <div class="body"><p class="hint" id="storage-hint"></p></div>
+    </div>
+
+    <div class="form-row">
+      <div class="actions">
+        <button class="btn primary" id="save-settings">Save settings</button>
+      </div>
     </div>
   </section>
 </main>
 
-<dialog id="editor">
-  <h3 id="editor-title">Edit night</h3>
+<!-- ------------------------------------------------------------- EDITOR -->
+<dialog id="editor" aria-labelledby="editor-title">
+  <header>
+    <h2 id="editor-title">Edit night</h2>
+    <span class="sub" id="editor-sub"></span>
+  </header>
   <div class="body" id="editor-body"></div>
   <div class="foot">
+    <button class="btn danger" id="editor-delete">Delete</button>
+    <span class="spacer"></span>
     <button class="btn" id="editor-cancel">Cancel</button>
-    <button class="btn primary" id="editor-save">Save</button>
+    <button class="btn primary" id="editor-save">Save changes</button>
   </div>
 </dialog>
 
 <div id="toast" role="status" aria-live="polite"></div>
-<script src="app.js"></script>
+<script type="module" src="app.js"></script>
 </body>
 </html>

@@ -1,4 +1,8 @@
 import * as db from '../database.js';
+import * as library from '../games.js';
+import * as sync from '../bgg/sync.js';
+import { parseCurl, describeRequest } from '../bgg/curl.js';
+import { lookupUser, redact as redactBgg } from '../bgg/xmlapi.js';
 import { today, resolveReminderConfig } from '../config.js';
 import { isValidTimezone, parseReminderTime } from '../time.js';
 import { buildRotation, upcomingIntervalDays, suggestNextStart } from '../rotation.js';
@@ -12,6 +16,11 @@ import { buildRotation, upcomingIntervalDays, suggestNextStart } from '../rotati
 // on every save, all of it applies identically whichever surface you used.
 
 const RSVP_STATES = ['going', 'tentative', 'out'];
+// Shown in the panel header, the browser tab and the public page. Every install
+// is somebody else's group, so the name is theirs to set rather than ours to
+// hardcode. Kept short because it sits in a header next to a status line.
+const DEFAULT_DISPLAY_NAME = 'Game Night';
+const MAX_DISPLAY_NAME = 60;
 const GAME_STATES = ['pending', 'completed', 'skipped'];
 
 class ApiError extends Error {
@@ -133,6 +142,8 @@ function readState(client) {
 
   return {
     today: todayIso,
+    // Resolved for display: the panel should never have to know the default.
+    displayName: settings.displayName || DEFAULT_DISPLAY_NAME,
     timezone: reminder.timezone,
     intervalDays: upcomingIntervalDays(),
     players: db.getAllPlayers().map(p => ({ ...p })),
@@ -140,11 +151,23 @@ function readState(client) {
     past,
     unresolved: past.filter(e => e.status === 'pending').length,
     settings: {
+      displayName: settings.displayName || '',
       announcementsChannel: settings.announcementsChannel || '',
       notificationsChannel: settings.notificationsChannel || '',
       timezone: settings.timezone || '',
-      reminderTime: settings.reminderTime || ''
+      reminderTime: settings.reminderTime || '',
+      bggCollectionUrl: settings.bggCollectionUrl || '',
+      // The token itself never leaves the server; the panel only needs to
+      // know whether to render "set" or an empty field.
+      bggTokenSet: Boolean(settings.bggToken),
+      // Env-only XML API token. Same write-only pattern: the panel learns
+      // whether Sync from BGG will work, never the bearer value.
+      bggAppTokenSet: Boolean(String(process.env.BGG_APP_TOKEN || '').trim()),
+      // What was captured, minus the secrets: enough for the panel to prove it
+      // stored a real request without handing the cookies back to a browser.
+      bggRequest: describeRequest(settings.bggRequest)
     },
+    library: library.getGamesMeta(),
     reminder: { timeLabel: reminder.timeLabel, timezone: reminder.timezone, expression: reminder.expression },
     stats: db.getDbStats(),
     botConnected: Boolean(client?.isReady?.())
@@ -161,7 +184,11 @@ export function buildPublicSnapshot() {
       status: e.status
     }))
     .sort((a, b) => a.date.localeCompare(b.date));
-  return { updatedAt: new Date().toISOString(), schedule };
+  return {
+    updatedAt: new Date().toISOString(),
+    displayName: db.getSettings().displayName || DEFAULT_DISPLAY_NAME,
+    schedule
+  };
 }
 
 // -------------------------------------------------------------
@@ -203,6 +230,12 @@ async function dispatch({ method, segments, body, deps }) {
             ? (body.discord_id ? requireSnowflake(body.discord_id) : null)
             : undefined;
           db.updatePlayer(currentName, isActive, discordId);
+        }
+        if ('bgg_user_id' in body) {
+          // The panel offers a picker built from the synced group members, so
+          // the username rides along with the id it belongs to.
+          const bggId = body.bgg_user_id ? requireId(body.bgg_user_id, 'BGG user id') : null;
+          db.setPlayerBgg(player.id, bggId, bggId ? body.bgg_username : null);
         }
         return readState(client);
       }
@@ -329,16 +362,109 @@ async function dispatch({ method, segments, body, deps }) {
       if (t && !parseReminderTime(t)) throw badRequest(`"${t}" is not a valid HH:MM time.`);
       db.updateSettings('reminderTime', t || undefined);
     }
+    if ('displayName' in body) {
+      const name = String(body.displayName ?? '').trim().slice(0, MAX_DISPLAY_NAME);
+      // Empty clears it, falling back to the default rather than showing blank.
+      db.updateSettings('displayName', name || undefined);
+    }
     for (const key of ['announcementsChannel', 'notificationsChannel']) {
       if (!(key in body)) continue;
       const value = String(body[key] ?? '').trim();
       if (value) requireSnowflake(value, key);
       db.updateSettings(key, value || undefined);
     }
+    if ('bggCollectionUrl' in body) {
+      const url = String(body.bggCollectionUrl ?? '').trim();
+      if (url && !/^https?:\/\//i.test(url)) {
+        throw badRequest('The collection URL must start with http:// or https://.');
+      }
+      db.updateSettings('bggCollectionUrl', url || undefined);
+    }
+    if ('bggRequest' in body) {
+      // Pasted straight out of the browser's network tab. Empty clears it and
+      // falls back to the plain URL path.
+      const text = String(body.bggRequest ?? '').trim();
+      if (!text) {
+        db.updateSettings('bggRequest', undefined);
+      } else {
+        let request;
+        try {
+          request = parseCurl(text);
+        } catch (err) {
+          throw badRequest(err.message);
+        }
+        db.updateSettings('bggRequest', request);
+        // Keep the plain URL in step so the rest of the panel can show where
+        // the library comes from without unpacking the capture.
+        db.updateSettings('bggCollectionUrl', request.url);
+      }
+    }
+    if ('bggToken' in body) {
+      // Write-only from the browser: readState reports whether one is set, and
+      // never what it is.
+      const token = String(body.bggToken ?? '').trim();
+      db.updateSettings('bggToken', token || undefined);
+    }
     // A reminder time that does not take effect until the next container
     // restart is a bug report waiting to happen. Rebuild the cron now.
     deps.onSettingsChanged?.();
     return readState(client);
+  }
+
+  // --- games ----------------------------------------------------------
+  // The library answers with its own shape rather than the whole state: it is
+  // large, it changes only on sync, and every other tab is unaffected by it.
+  if (head === 'games') {
+    if (method === 'GET' && rest.length === 0) {
+      return {
+        meta: library.getGamesMeta(),
+        sync: sync.getSyncStatus(),
+        imports: sync.listImportFiles(),
+        users: library.getGamesUsers(),
+        games: library.getGames()
+      };
+    }
+
+    // Progress polling for a run started below. Cheap and called often.
+    if (method === 'GET' && rest[0] === 'sync' && rest.length === 1) {
+      return sync.getSyncStatus();
+    }
+
+    if (method === 'POST' && rest[0] === 'sync' && rest.length === 1) {
+      if (String(body.source || '') === 'bgg') return sync.startBggSync();
+      return sync.startSync();
+    }
+
+    // Answers the one question the API itself will not: did the token work?
+    if (method === 'POST' && rest[0] === 'test' && rest.length === 1) {
+      return sync.testConnection();
+    }
+
+    if (method === 'POST' && rest[0] === 'user' && rest.length === 1) {
+      const username = String(body.username ?? '').trim();
+      if (!username) throw badRequest('A BGG username is required.');
+      try {
+        return await lookupUser(username);
+      } catch (err) {
+        throw badRequest(redactBgg(err.message));
+      }
+    }
+
+    if (method === 'POST' && rest[0] === 'import' && rest.length === 1) {
+      const file = String(body.file ?? '').trim();
+      if (!file) throw badRequest('An import filename is required.');
+      if (sync.isSyncing()) throw badRequest('A sync is already running.');
+      sync.importFromFile(file);
+      return { meta: library.getGamesMeta(), sync: sync.getSyncStatus() };
+    }
+
+    // Re-normalize the newest archived pages -- what you want after linking a
+    // player to a BGG account, since that changes whose ratings count.
+    if (method === 'POST' && rest[0] === 'rebuild' && rest.length === 1) {
+      if (sync.isSyncing()) throw badRequest('A sync is already running.');
+      sync.rebuildFromArchive();
+      return { meta: library.getGamesMeta(), sync: sync.getSyncStatus() };
+    }
   }
 
   // --- convenience ----------------------------------------------------

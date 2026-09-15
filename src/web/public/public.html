@@ -3,27 +3,66 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
 <title>Game Schedule</title>
 <style>
-  :root { color-scheme: light dark; --line: #dde1e7; --dim: #667085; }
-  @media (prefers-color-scheme: dark) { :root { --line: #333a44; --dim: #98a2b3; } }
-  body { font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; max-width: 34rem; margin: 2.5rem auto; padding: 0 1.25rem; }
-  h1 { font-size: 1.3rem; letter-spacing: -.01em; }
-  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-  th, td { text-align: left; padding: .5rem .4rem; border-bottom: 1px solid var(--line); }
-  th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--dim); font-weight: 600; }
-  tr.past td { color: var(--dim); }
-  td.status { text-align: right; font-size: .8rem; color: var(--dim); }
-  .updated { color: var(--dim); font-size: .8rem; }
+  :root {
+    color-scheme: light dark;
+    --bg: #ffffff;
+    --ink: #16191d;
+    --line: #e2e5ea;
+    --dim: #6b7480;
+    --accent: #4f46e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #101216; --ink: #e9ecf1; --line: #2c313a; --dim: #8d96a3; --accent: #8b83ff; }
+  }
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+    max-width: 32rem;
+    margin: 0 auto;
+    padding: 2.5rem 1.25rem 4rem;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1 { font-size: 1.45rem; letter-spacing: -.015em; margin: 0 0 .15rem; }
+  .tagline { color: var(--dim); font-size: .9rem; margin: 0 0 2rem; }
+  h2 {
+    font-size: .75rem; text-transform: uppercase; letter-spacing: .07em;
+    color: var(--dim); font-weight: 650; margin: 2rem 0 .5rem;
+  }
+  h2:first-of-type { margin-top: 0; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li {
+    display: flex; align-items: baseline; gap: .75rem;
+    padding: .6rem 0; border-bottom: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+  }
+  li .date { flex: 0 0 8.5rem; }
+  li .host { flex: 1 1 auto; font-weight: 560; }
+  li .tag { flex: none; font-size: .78rem; color: var(--dim); }
+  li.next .date { color: var(--accent); font-weight: 620; }
+  li.done { color: var(--dim); }
+  li.done .host { font-weight: 400; }
+  .none { color: var(--dim); font-size: .9rem; padding: .6rem 0; }
+  footer { color: var(--dim); font-size: .78rem; margin-top: 2.5rem; }
 </style>
 </head>
 <body>
-  <h1>Upcoming Games</h1>
-  <table>
-    <thead><tr><th>Date</th><th>Host</th><th class="status">Status</th></tr></thead>
-    <tbody id="rows"><tr><td colspan="3">Loading…</td></tr></tbody>
-  </table>
-  <p class="updated" id="updated"></p>
+  <h1 id="title">Game Schedule</h1>
+  <p class="tagline">Who's hosting, and when.</p>
+
+  <h2>Coming up</h2>
+  <ul id="upcoming"><li class="none">Loading…</li></ul>
+
+  <div id="recent-wrap" hidden>
+    <h2>Recently played</h2>
+    <ul id="recent"></ul>
+  </div>
+
+  <footer id="updated"></footer>
 <script src="public.js"></script>
 </body>
 </html>

@@ -10,7 +10,7 @@ import { today } from './config.js';
 import { formatDateBeautiful, buildPostponeEmbed } from './format.js';
 import { announceToPublicChannel } from './announce.js';
 import { cid } from './customId.js';
-import { buildRsvpEmbed, formatRsvpSummaryText } from './rsvp.js';
+import { buildRsvpEmbed, formatRsvpSummaryText, rosterDiscordIdsForRsvp } from './rsvp.js';
 import { CLAIM_DEADLINE_DAYS_BEFORE, closeClaimCall } from './hostCalls.js';
 
 // Read by /admin status. `export let` is a live binding, so importers see each
@@ -330,7 +330,7 @@ export async function runAttendanceSummaryCheck(client) {
         const channel = await client.channels.fetch(channelId);
         if (channel && channel.isTextBased()) {
           const hostMention = discordId ? `<@${discordId}>` : `**${playerName}**`;
-          const summaryText = formatRsvpSummaryText(game.rsvps);
+          const summaryText = formatRsvpSummaryText(game.rsvps, rosterDiscordIdsForRsvp());
           const embed = new EmbedBuilder()
             .setTitle('Game night')
             .setColor(0x34495E)

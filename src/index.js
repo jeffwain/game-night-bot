@@ -24,7 +24,7 @@ if (fs.existsSync('/app/data')) {
 for (const key of [
   'DISCORD_TOKEN', 'DISCORD_CLIENT_ID', 'DISCORD_GUILD_ID', 'DISCORD_CHANNEL_ID',
   'NOTIFICATIONS_CHANNEL_ID', 'CHECK_INTERVAL_MS', 'WEB_PORT', 'WEB_HOST',
-  'WEB_ALLOW_REMOTE', 'TZ'
+  'WEB_ALLOW_REMOTE', 'TZ', 'BGG_APP_TOKEN'
 ]) {
   if (process.env[key] === '') delete process.env[key];
 }

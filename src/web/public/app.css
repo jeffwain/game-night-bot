@@ -1,189 +1,574 @@
-/* Hand-written, ~9 KB, no build step and no framework. The container this
-   runs in exists to idle; shipping a bundler toolchain to style four tables
-   would cost more than the bot does. */
+/* Game Night control panel.
+ *
+ * Hand-written, no framework, no build step. The container this runs in exists
+ * to idle between cron ticks; shipping a bundler to style four screens would
+ * cost more than the bot does.
+ *
+ * Layout rule of thumb: every screen is a stack of cards, and every card is
+ * either a LIST (rows you scan) or a FORM (fields you fill). Mixing the two in
+ * one card is what made the first version read as a spreadsheet.
+ */
 
 :root {
   color-scheme: light dark;
-  --bg: #f6f7f9;
+
+  --bg: #f4f5f7;
   --panel: #ffffff;
-  --panel-2: #f2f4f7;
-  --line: #dde1e7;
-  --ink: #1b1f24;
-  --ink-dim: #667085;
+  --panel-2: #f7f8fa;
+  --line: #e2e5ea;
+  --line-strong: #cbd1da;
+  --ink: #16191d;
+  --ink-2: #4a515b;
+  --ink-dim: #6b7480;
   --accent: #4f46e5;
   --accent-ink: #ffffff;
-  --going: #0f8a4d;
-  --tentative: #b7791f;
-  --out: #c0392b;
-  --warn-bg: #fff6e5;
+  --accent-soft: #eef0fe;
+  --going: #0f7a45;
+  --tentative: #9a6700;
+  --out: #b42318;
+  --warn-bg: #fff8ea;
   --warn-line: #f0c674;
-  --radius: 10px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .1);
+  --warn-ink: #6b4e00;
+  --danger: #b42318;
+
+  --r-sm: 6px;
+  --r: 10px;
+  --r-lg: 14px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, .05), 0 1px 3px rgba(16, 24, 40, .08);
+
+  /* One place to retune row rhythm. */
+  --row-y: .7rem;
+  --gutter: 1rem;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14171c;
-    --panel: #1c2027;
-    --panel-2: #23282f;
-    --line: #333a44;
-    --ink: #e8ebf0;
-    --ink-dim: #98a2b3;
-    --accent: #7c74ff;
-    --going: #3ecf8e;
-    --tentative: #e2b33c;
-    --out: #f0736a;
-    --warn-bg: #2e2716;
-    --warn-line: #6b5722;
+    --bg: #101216;
+    --panel: #191c21;
+    --panel-2: #1f2329;
+    --line: #2c313a;
+    --line-strong: #3d444f;
+    --ink: #e9ecf1;
+    --ink-2: #b6bdc8;
+    --ink-dim: #8d96a3;
+    --accent: #8b83ff;
+    --accent-ink: #14121f;
+    --accent-soft: #23213a;
+    --going: #46cf8b;
+    --tentative: #e0b341;
+    --out: #f2837a;
+    --warn-bg: #2a2417;
+    --warn-line: #6a5a2a;
+    --warn-ink: #e6d3a3;
+    --danger: #f2837a;
     --shadow: none;
   }
 }
 
 * { box-sizing: border-box; }
 
+html { -webkit-text-size-adjust: 100%; }
+
 body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
+
+/* Anything focusable gets the same visible ring. Never remove it: this panel
+   is entirely keyboard-operable and several controls have no other affordance. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--r-sm);
+}
+
+.shell { max-width: 62rem; margin: 0 auto; padding: 0 var(--gutter); }
+
+/* ---------------------------------------------------------------- header */
 
 header {
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: .75rem;
   flex-wrap: wrap;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--line);
-  background: var(--panel);
+  padding: .85rem 0;
 }
-header h1 { font-size: 1.05rem; margin: 0; letter-spacing: -.01em; }
-header .meta { color: var(--ink-dim); font-size: .82rem; }
-header .spacer { flex: 1; }
+.head h1 {
+  font-size: 1.05rem;
+  margin: 0;
+  letter-spacing: -.01em;
+  font-weight: 650;
+}
+.head .spacer { flex: 1 1 auto; }
+.head .meta {
+  color: var(--ink-dim);
+  font-size: .82rem;
+  white-space: nowrap;
+}
 
-.dot { display: inline-block; width: .5rem; height: .5rem; border-radius: 50%; background: var(--out); margin-right: .35rem; }
+/* Status is a single line of text with a dot, not a banner. A permanent
+   banner for a normal state trains you to ignore banners. */
+.status {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+  color: var(--ink-dim);
+}
+.dot {
+  width: .5rem; height: .5rem;
+  border-radius: 50%;
+  background: var(--ink-dim);
+  flex: none;
+}
 .dot.on { background: var(--going); }
+.dot.off { background: var(--out); }
+
+/* ------------------------------------------------------------------ tabs */
 
 nav {
-  display: flex;
-  gap: .25rem;
-  padding: .5rem 1.25rem 0;
   background: var(--panel);
   border-bottom: 1px solid var(--line);
-  overflow-x: auto;
+  position: sticky;
+  top: 0;
+  z-index: 5;
 }
-nav button {
+.tabs {
+  display: flex;
+  gap: .1rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button {
+  appearance: none;
   border: 0;
   background: none;
   color: var(--ink-dim);
   font: inherit;
-  padding: .5rem .75rem;
+  font-size: .92rem;
+  padding: .7rem .8rem;
   border-bottom: 2px solid transparent;
   cursor: pointer;
   white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
 }
-nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
-nav .count { font-size: .75rem; background: var(--panel-2); border-radius: 999px; padding: 0 .4rem; margin-left: .3rem; }
+.tabs button:hover { color: var(--ink-2); }
+.tabs button[aria-selected="true"] {
+  color: var(--ink);
+  border-bottom-color: var(--accent);
+  font-weight: 620;
+}
+.tabs .count {
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0 .38rem;
+  min-width: 1.35rem;
+  text-align: center;
+  color: var(--ink-dim);
+}
+.tabs button[aria-selected="true"] .count {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+}
 
-main { padding: 1.25rem; max-width: 68rem; margin: 0 auto; }
+main { padding: 1.15rem 0 4rem; }
 section[hidden] { display: none; }
+
+/* ----------------------------------------------------------------- cards */
 
 .card {
   background: var(--panel);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
+  border-radius: var(--r-lg);
   box-shadow: var(--shadow);
   margin-bottom: 1rem;
   overflow: hidden;
 }
-.card > h2 {
+.card > header {
+  display: flex;
+  align-items: baseline;
+  gap: .6rem;
+  flex-wrap: wrap;
+  padding: .8rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: none;
+}
+.card > header h2 {
   margin: 0;
-  padding: .75rem 1rem;
-  font-size: .8rem;
+  font-size: .95rem;
+  font-weight: 620;
+  letter-spacing: -.005em;
+}
+.card > header .sub {
+  color: var(--ink-dim);
+  font-size: .82rem;
+}
+.card > header .spacer { flex: 1 1 auto; }
+/* Search sits in the card header rather than above the list: it belongs to
+   these rows, and the header already had the room. */
+.card > header input[type="search"] {
+  flex: 0 1 16rem;
+  min-width: 9rem;
+  align-self: center;
+}
+.card > header .btn { align-self: center; }
+.card > .body { padding: 1rem; }
+.card > .body > :first-child { margin-top: 0; }
+.card > .body > :last-child { margin-bottom: 0; }
+
+/* ------------------------------------------------------------------ rows */
+
+/* Grid rather than <table>: the columns are declared once here, so nothing
+   sprawls to fill the viewport, and the whole thing restacks on a phone
+   without a horizontal scrollbar hiding the buttons. */
+.rows { display: flex; flex-direction: column; }
+.row {
+  display: grid;
+  gap: .5rem .75rem;
+  align-items: center;
+  padding: var(--row-y) 1rem;
+  border-top: 1px solid var(--line);
+}
+.rows > .row:first-child { border-top: 0; }
+.row:hover { background: var(--panel-2); }
+
+.row-head {
+  padding-top: .5rem;
+  padding-bottom: .5rem;
+  background: var(--panel-2);
+  border-top: 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .72rem;
   text-transform: uppercase;
   letter-spacing: .06em;
   color: var(--ink-dim);
-  border-bottom: 1px solid var(--line);
+  font-weight: 600;
+}
+.row-head:hover { background: var(--panel-2); }
+
+/* Upcoming: date | host | rsvps | actions */
+.rows.upcoming .row { grid-template-columns: 11rem minmax(7rem, 12rem) minmax(0, 1fr) auto; }
+/* History: date | host | outcome | who came | actions */
+.rows.history .row { grid-template-columns: 10rem minmax(6rem, 9rem) 10.5rem minmax(0, 1fr) auto; }
+/* Players: name | discord | bgg | in-rotation | nights | actions */
+.rows.players .row { grid-template-columns: minmax(7rem, 1fr) minmax(8rem, 12rem) minmax(8rem, 12rem) 7rem 5rem auto; }
+/* Games: name | our avg | group avg | bgg | owners | last played */
+.rows.games .row { grid-template-columns: minmax(10rem, 1fr) 4rem 6rem 4rem minmax(8rem, 16rem) 8rem; }
+
+/* Ratings read as a column of numbers to compare, so line up the decimals. */
+.rows.games .row > .cell:nth-child(2) .cell-body,
+.rows.games .row > .cell:nth-child(3) .cell-body,
+.rows.games .row > .cell:nth-child(4) .cell-body { font-variant-numeric: tabular-nums; }
+
+.owners { display: flex; flex-wrap: wrap; gap: .25rem .4rem; }
+.owner {
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+  font-size: .82rem;
+  white-space: nowrap;
+}
+.owner .avatar {
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  object-fit: cover;
   background: var(--panel-2);
 }
-.card > .body { padding: 1rem; }
 
-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
-th { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-dim); font-weight: 600; }
-tbody tr:last-child td { border-bottom: 0; }
-tbody tr:hover { background: var(--panel-2); }
-td.actions { text-align: right; white-space: nowrap; }
-.scroll { overflow-x: auto; }
+.cell-date { font-variant-numeric: tabular-nums; }
+.cell-actions { display: flex; gap: .35rem; justify-content: flex-end; }
+.cell-label { display: none; }   /* shown only in the stacked layout */
+.cell-body { min-width: 0; }
+
+.caption {
+  display: block;
+  font-size: .78rem;
+  color: var(--ink-dim);
+  margin-top: .15rem;
+}
+.caption.soon { color: var(--tentative); font-weight: 560; }
+.when { font-weight: 560; }
+
+.muted { color: var(--ink-dim); }
+.nowrap { white-space: nowrap; }
+
+/* --------------------------------------------------------------- controls */
 
 input, select, textarea, button { font: inherit; color: inherit; }
+
 input, select, textarea {
   background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: .3rem .45rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  padding: .34rem .45rem;
   max-width: 100%;
+  min-width: 0;
 }
-input:focus-visible, select:focus-visible, textarea:focus-visible, button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-textarea { width: 100%; resize: vertical; min-height: 3.5rem; }
-input[type="date"] { min-width: 8.5rem; }
-
-button.btn {
+input:hover, select:hover, textarea:hover { border-color: var(--ink-dim); }
+input:disabled, select:disabled, textarea:disabled {
   background: var(--panel-2);
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  padding: .3rem .6rem;
-  cursor: pointer;
+  color: var(--ink-dim);
+  cursor: not-allowed;
 }
-button.btn:hover { border-color: var(--accent); }
-button.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
-button.btn.danger:hover { border-color: var(--out); color: var(--out); }
-button.btn:disabled { opacity: .45; cursor: not-allowed; }
-button.link { background: none; border: 0; color: var(--accent); cursor: pointer; padding: 0; text-decoration: underline; }
+textarea { width: 100%; resize: vertical; min-height: 4.5rem; line-height: 1.45; }
+/* A date/time input renders its own picker glyph, and browsers do not shrink
+   the text to fit. Too narrow a field silently clips to "10/06/202(". */
+input[type="date"], input[type="time"] { width: 100%; min-width: 8.75rem; }
+select { width: 100%; }
+input[type="checkbox"] { width: 1rem; height: 1rem; accent-color: var(--accent); }
 
-.row { display: flex; flex-wrap: wrap; gap: .6rem; align-items: flex-end; }
-.field { display: flex; flex-direction: column; gap: .2rem; }
-.field label { font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-dim); }
-.hint { color: var(--ink-dim); font-size: .82rem; margin: .4rem 0 0; }
+.btn {
+  --btn-bg: var(--panel);
+  --btn-line: var(--line-strong);
+  --btn-ink: var(--ink);
+  background: var(--btn-bg);
+  border: 1px solid var(--btn-line);
+  color: var(--btn-ink);
+  border-radius: var(--r-sm);
+  padding: .34rem .7rem;
+  cursor: pointer;
+  white-space: nowrap;
+  font-size: .9rem;
+}
+.btn:hover:not(:disabled) { border-color: var(--ink-dim); background: var(--panel-2); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+
+.btn.primary {
+  --btn-bg: var(--accent);
+  --btn-line: var(--accent);
+  --btn-ink: var(--accent-ink);
+  font-weight: 600;
+}
+.btn.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+
+.btn.danger { --btn-ink: var(--danger); }
+.btn.danger:hover:not(:disabled) { --btn-line: var(--danger); background: var(--panel-2); }
+
+.btn.quiet { --btn-line: transparent; --btn-ink: var(--ink-dim); background: none; }
+.btn.quiet:hover:not(:disabled) { --btn-line: var(--line-strong); --btn-ink: var(--ink); }
+
+.btn.sm { padding: .22rem .5rem; font-size: .82rem; }
+
+.linkish {
+  background: none; border: 0; padding: 0;
+  color: var(--accent); cursor: pointer;
+  font-size: inherit; text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ----------------------------------------------------------------- forms */
+
+.field { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+.field > label, .field-label {
+  font-size: .78rem;
+  font-weight: 560;
+  color: var(--ink-2);
+}
+.field .hint { font-size: .78rem; color: var(--ink-dim); }
+
+.form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: flex-end;
+}
+.form-row > .field { flex: 1 1 11rem; max-width: 22rem; }
+.form-row > .field.narrow { flex: 0 0 10rem; }
+.form-row > .field.tiny { flex: 0 0 6rem; }
+.form-row > .actions { display: flex; gap: .5rem; }
+
+.hint { color: var(--ink-dim); font-size: .85rem; }
+p.hint { margin: .55rem 0 0; }
+
+fieldset {
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  padding: .75rem .9rem .9rem;
+  margin: 0;
+  min-width: 0;
+}
+/* A unit that belongs to the field before it, not a field of its own. So it
+   aligns with the input, not with the label sitting above the input. */
+.suffix {
+  align-self: flex-end;
+  padding-bottom: .45rem;
+  color: var(--ink-dim);
+  font-size: .88rem;
+  white-space: nowrap;
+}
+
+fieldset legend {
+  font-size: .78rem;
+  font-weight: 560;
+  color: var(--ink-2);
+  padding: 0 .3rem;
+}
+
+/* ----------------------------------------------------------------- chips */
 
 .pill {
   display: inline-block;
-  font-size: .72rem;
-  font-weight: 600;
+  font-size: .74rem;
+  font-weight: 560;
   padding: .1rem .45rem;
   border-radius: 999px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   background: var(--panel-2);
   color: var(--ink-dim);
+  white-space: nowrap;
 }
-.pill.completed { color: var(--going); border-color: color-mix(in srgb, var(--going) 40%, transparent); }
-.pill.skipped { color: var(--out); border-color: color-mix(in srgb, var(--out) 40%, transparent); }
-.pill.overdue { color: var(--tentative); border-color: var(--warn-line); background: var(--warn-bg); }
+.pill.played { color: var(--going); border-color: color-mix(in srgb, var(--going) 45%, transparent); }
+.pill.calledoff { color: var(--out); border-color: color-mix(in srgb, var(--out) 45%, transparent); }
+.pill.attention {
+  color: var(--warn-ink);
+  border-color: var(--warn-line);
+  background: var(--warn-bg);
+}
 
-.rsvp { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
-.rsvp .who { font-size: .8rem; border: 1px solid var(--line); border-radius: 999px; padding: .05rem .5rem; }
-.rsvp .who.going { color: var(--going); }
-.rsvp .who.tentative { color: var(--tentative); }
-.rsvp .who.out { color: var(--out); text-decoration: line-through; }
-.rsvp .none { color: var(--ink-dim); font-size: .8rem; }
+.rsvps { display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; }
+.who {
+  font-size: .8rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: .05rem .5rem;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: .3rem;
+}
+.who.going { color: var(--going); border-color: color-mix(in srgb, var(--going) 40%, transparent); }
+.who.tentative { color: var(--tentative); border-color: color-mix(in srgb, var(--tentative) 40%, transparent); }
+.who.out { color: var(--out); border-color: color-mix(in srgb, var(--out) 40%, transparent); text-decoration: line-through; }
+.who .drop { color: inherit; opacity: .75; }
+.who .drop:hover { opacity: 1; }
 
-.banner {
+.tags { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .25rem; }
+
+/* --------------------------------------------------------------- notices */
+
+.notice {
+  display: flex;
+  gap: .6rem;
+  align-items: flex-start;
   border: 1px solid var(--warn-line);
   background: var(--warn-bg);
-  border-radius: var(--radius);
-  padding: .6rem .85rem;
+  color: var(--warn-ink);
+  border-radius: var(--r);
+  padding: .65rem .85rem;
   margin-bottom: 1rem;
-  font-size: .88rem;
+  font-size: .89rem;
 }
+.notice .btn { margin-left: auto; flex: none; }
+
+/* Empty states carry the next action rather than just saying "nothing here".
+   On a fresh install this is the entire onboarding. */
+.empty {
+  padding: 2rem 1rem 2.25rem;
+  text-align: center;
+  color: var(--ink-dim);
+}
+.empty h3 {
+  margin: 0 0 .35rem;
+  font-size: 1rem;
+  font-weight: 620;
+  color: var(--ink);
+}
+.empty p { margin: 0 auto .9rem; max-width: 34rem; font-size: .89rem; }
+.empty .steps {
+  list-style: none;
+  margin: 0 auto .9rem;
+  padding: 0;
+  max-width: 26rem;
+  text-align: left;
+  font-size: .89rem;
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+}
+.empty .steps li {
+  display: flex;
+  gap: .55rem;
+  align-items: baseline;
+}
+.empty .steps .n {
+  flex: none;
+  width: 1.35rem; height: 1.35rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .75rem;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty .steps li.done { color: var(--ink-dim); }
+.empty .steps li.done .n { background: var(--panel-2); color: var(--going); }
+
+/* ---------------------------------------------------------------- dialog */
+
+dialog {
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--panel);
+  color: var(--ink);
+  padding: 0;
+  width: min(38rem, calc(100vw - 2rem));
+  max-height: calc(100vh - 3rem);
+  overflow: visible;
+  box-shadow: 0 12px 32px rgba(16, 24, 40, .18);
+}
+dialog::backdrop { background: rgba(12, 16, 22, .5); }
+dialog > header {
+  display: flex;
+  align-items: baseline;
+  gap: .5rem;
+  padding: .85rem 1rem;
+  border-bottom: 1px solid var(--line);
+  background: none;
+}
+dialog h2 { margin: 0; font-size: 1rem; font-weight: 620; }
+dialog .sub { color: var(--ink-dim); font-size: .82rem; }
+dialog .body {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: min(64vh, 34rem);
+  overflow-y: auto;
+}
+dialog .foot {
+  padding: .75rem 1rem;
+  border-top: 1px solid var(--line);
+  display: flex;
+  gap: .5rem;
+  align-items: center;
+}
+dialog .foot .spacer { flex: 1 1 auto; }
+
+/* ----------------------------------------------------------------- toast */
 
 #toast {
   position: fixed;
   left: 50%;
   bottom: 1.25rem;
-  transform: translateX(-50%) translateY(1rem);
+  transform: translateX(-50%) translateY(.75rem);
   background: var(--ink);
   color: var(--bg);
   padding: .55rem 1rem;
@@ -191,31 +576,77 @@ button.link { background: none; border: 0; color: var(--accent); cursor: pointer
   font-size: .88rem;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .15s, transform .15s;
-  max-width: 90vw;
-  z-index: 20;
+  transition: opacity .15s ease, transform .15s ease;
+  max-width: min(92vw, 34rem);
+  z-index: 40;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, .25);
 }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
-#toast.error { background: var(--out); color: #fff; }
-
-dialog {
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  background: var(--panel);
-  color: var(--ink);
-  padding: 0;
-  max-width: min(34rem, 92vw);
-}
-dialog::backdrop { background: rgba(0, 0, 0, .45); }
-dialog h3 { margin: 0; padding: .8rem 1rem; border-bottom: 1px solid var(--line); font-size: .95rem; }
-dialog .body { padding: 1rem; }
-dialog .foot { padding: .75rem 1rem; border-top: 1px solid var(--line); display: flex; justify-content: flex-end; gap: .5rem; }
+#toast.error { background: var(--danger); color: #fff; }
 
 body.busy { cursor: progress; }
-body.busy main { opacity: .6; }
+body.busy main { opacity: .55; }
 
-@media (max-width: 640px) {
-  main { padding: .75rem; }
-  th, td { padding: .45rem .4rem; }
-  .card > .body { padding: .75rem; }
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
+
+/* ------------------------------------------------------------ narrow view */
+
+/* Below this the grid columns stop earning their keep: cells get too narrow to
+   read and the action buttons end up behind a horizontal scrollbar. Restack
+   each row as a small card, with the column headings moved inline as labels. */
+@media (max-width: 760px) {
+  :root { --gutter: .75rem; }
+
+  .rows .row-head { display: none; }
+
+  .rows .row {
+    grid-template-columns: 1fr !important;
+    gap: .5rem;
+    padding: .85rem 1rem;
+    align-items: stretch;
+  }
+  .rows .row > * { min-width: 0; }
+
+  /* Label beside the control rather than above it. Stacking them cost three
+     extra lines per field, which turned five nights into a very long scroll. */
+  .rows .row > .cell {
+    display: flex;
+    gap: .6rem;
+    align-items: baseline;
+  }
+  .cell-label {
+    display: block;
+    flex: 0 0 4.75rem;
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: var(--ink-dim);
+    font-weight: 600;
+    margin: 0;
+    padding-top: .45rem;
+  }
+  .rows .row > .cell > .cell-body { flex: 1 1 auto; }
+
+  .cell-actions {
+    justify-content: stretch;
+    gap: .5rem;
+    padding-top: .25rem;
+    padding-left: 5.35rem;
+  }
+  .cell-actions .btn { flex: 1 1 auto; }
+
+  .card > header { padding: .75rem .85rem; }
+  .card > .body { padding: .85rem; }
+
+  dialog { width: calc(100vw - 1rem); }
+  dialog .body { max-height: 68vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
+  .btn:active:not(:disabled) { transform: none; }
 }

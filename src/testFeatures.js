@@ -68,8 +68,8 @@ ok('addDaysIso survives DST, year rollover, and leap day');
 console.log('\n3. Permission gates');
 const MANAGE_GUILD = '32', ADMIN = '8';
 const byName = Object.fromEntries(commands.map(c => [c.name, c]));
-assert.equal(commands.length, 5, 'five top-level commands');
-const expect = { update: MANAGE_GUILD, admin: ADMIN, schedule: null, help: null, player: null };
+assert.equal(commands.length, 6, 'six top-level commands');
+const expect = { update: MANAGE_GUILD, admin: ADMIN, schedule: null, help: null, player: null, games: null };
 for (const [name, want] of Object.entries(expect)) {
   const got = byName[name].default_member_permissions ?? null;
   assert.equal(got, want, `${name}: expected ${want}, got ${got}`);
@@ -78,7 +78,7 @@ const subs = (n) => byName[n].options.filter(o => o.type === 1).map(o => o.name)
 assert.deepEqual(subs('update'), ['new', 'add', 'done', 'swap', 'edit', 'clear']);
 assert.deepEqual(subs('admin'), ['setup', 'status', 'scan', 'config']);
 assert.deepEqual(subs('player'), ['add', 'remove', 'toggle', 'link', 'list']);
-ok('12 commands collapsed to 5: /update gated to Manage Server, /admin to Administrator, 3 public');
+ok('13 commands collapsed to 6: /update gated to Manage Server, /admin to Administrator, 4 public');
 
 // The destructive path must be its own verb, never a default argument value.
 const updNew = byName.update.options.find(o => o.name === 'new');
@@ -252,6 +252,11 @@ ok('bare M/D rolls forward instead of landing in the past (or in the year 2001)'
 assert.equal(formatRsvpSummaryText({}), 'No RSVPs yet.');
 assert.equal(formatRsvpSummaryText({ a: 'going' }), "Everyone's in.");
 assert.equal(formatRsvpSummaryText({ a: 'going', b: 'going' }), "Everyone's in.");
+assert.match(
+  formatRsvpSummaryText({ a: 'going' }, ['a', 'b']),
+  /is in.*Still waiting on.*<@b>/
+);
+assert.equal(formatRsvpSummaryText({ a: 'going', b: 'going' }, ['a', 'b']), "Everyone's in.");
 assert.match(formatRsvpSummaryText({ a: 'out' }), /is out/);
 assert.match(formatRsvpSummaryText({ a: 'out', b: 'out' }), /are out/);
 assert.match(formatRsvpSummaryText({ a: 'going', b: 'tentative' }), /is a maybe/);
@@ -355,6 +360,77 @@ assert.deepEqual(chunkToFields('Empty', [], 'Nothing.'), [{ name: 'Empty', value
 const huge = chunkToFields('One', ['x'.repeat(3000)]);
 assert.ok(huge[0].value.length <= 1024, 'a single over-long line is truncated, not rejected');
 ok('chunkToFields keeps every field under 1024 chars and drops no lines (60 players OK)');
+
+// ---------- /games ----------
+// The command and the Games tab must rank identically -- they import the same
+// scorer precisely so they cannot drift, and this is what proves the wiring.
+console.log('\n/games');
+const { searchGames, scoreGame, foldText } = await import('./web/public/search.js');
+
+const lib = [
+  { id: 1, name: 'Terraforming Mars', original_name: 'Terraforming Mars', published: 2016, is_expansion: false,
+    status: { own: [501] }, owner_count: 1, expansions: [{ id: 9, name: 'Terraforming Mars: Hellas & Elysium' }],
+    rating: { average: 8.4, group_average: 8.4, bgg_average: 8.3 },
+    plays: { last_play: '2020-08-01', total_plays: 12 } },
+  { id: 2, name: 'Catan', original_name: 'Die Siedler von Catan', published: 1995, is_expansion: false,
+    status: { own: [] }, owner_count: 0, expansions: [{ id: 8, name: 'Catan: Seafarers' }],
+    rating: { average: null, group_average: null, bgg_average: 7.1 },
+    plays: { last_play: null, total_plays: 0 } },
+  { id: 3, name: 'Catan: Cities & Knights', original_name: 'Catan: Cities & Knights', published: 1998,
+    is_expansion: true, status: { own: [501] }, owner_count: 1, expansions: [],
+    rating: { average: null, group_average: null, bgg_average: 7.6 },
+    plays: { last_play: null, total_plays: 0 } }
+];
+
+// Expansions are hidden unless asked for -- the default the command uses.
+assert.deepEqual(searchGames(lib, 'catan', { includeExpansions: false }).map(h => h.game.id), [2],
+  'an expansion is not a result by default');
+assert.deepEqual(searchGames(lib, 'catan', { includeExpansions: true }).map(h => h.game.id), [2, 3],
+  'and is one when asked for, ranked below the base game');
+
+// A base game found through its expansion is still the answer, and says so.
+const viaExpansion = searchGames(lib, 'seafarers', { includeExpansions: false });
+assert.equal(viaExpansion.length, 1, 'an expansion name surfaces its base game even with expansions hidden');
+assert.equal(viaExpansion[0].game.id, 2);
+assert.equal(viaExpansion[0].matchedExpansion, 'Catan: Seafarers', 'and the match is attributed');
+
+assert.deepEqual(searchGames(lib, 'trmis').map(h => h.game.id), [1], 'subsequence matching survives the move');
+assert.equal(searchGames(lib, 'zzzz').length, 0, 'nonsense matches nothing');
+assert.equal(searchGames(lib, '').length, 3, 'a blank query returns everything');
+assert.equal(foldText('Pok\u00e9mon Caf\u00e9'), 'pokemon cafe', 'diacritics fold');
+assert.ok(scoreGame(lib[0], 'terraforming').score > scoreGame(lib[0], 'mars').score,
+  'a prefix beats a mid-word hit');
+ok('the shared scorer hides expansions by default and still finds a base game through one');
+
+// The command reads the library off disk like everything else does.
+fs.writeFileSync(`${DIR}/games.json`, JSON.stringify({
+  synced_at: new Date().toISOString(),
+  source: 'import',
+  users: [{ id: 501, username: 'ada', full_name: 'Ada Lovelace', sort_name: 'ada', discord: null, avatar: null }],
+  games: lib
+}));
+
+const { cmdGames } = await import('./commands/games.js');
+function fakeGames(name, expansions) {
+  let captured = null;
+  return {
+    interaction: {
+      options: { getString: () => name, getBoolean: () => expansions },
+      reply: (p) => { captured = p; }
+    },
+    get embed() { return captured.embeds[0].data; }
+  };
+}
+
+let g = fakeGames('terraforming', null);
+await cmdGames(g.interaction);
+assert.match(g.embed.title, /matching "terraforming"/);
+assert.match(g.embed.footer.text, /Expansions hidden/, 'the default is stated, not silent');
+
+g = fakeGames('nothing-like-this', null);
+await cmdGames(g.interaction);
+assert.match(g.embed.title, /^Nothing matching/, 'an empty result says so rather than erroring');
+ok('/games replies with an embed, and names its own defaults');
 
 console.log(`\n\u2705 ALL FEATURE TESTS PASSED (${pass} checks) \u2705`);
 fs.rmSync(DIR, { recursive: true, force: true });
