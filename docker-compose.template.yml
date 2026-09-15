@@ -40,6 +40,10 @@ services:
       # so it is not sitting next to compose. An empty value here is ignored.
       - BGG_APP_TOKEN=${BGG_APP_TOKEN:-}
 
+      # Optional. Password for the BGG account that logs plays. Username is
+      # set in the panel. Prefer data/.env. An empty value here is ignored.
+      - BGG_PASSWORD=${BGG_PASSWORD:-}
+
       # Your timezone. Changeable later from Discord with /admin config.
       - TZ=${TZ:-America/Chicago}
 

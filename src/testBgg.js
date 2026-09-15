@@ -206,6 +206,75 @@ try {
   assert.deepEqual(looked, { id: 501, username: 'ada' });
   ok('a BGG username resolves to a numeric id without using Geekgroup');
 
+  console.log('\nBGG play logging');
+  const plays = await import('./bgg/plays.js');
+  const { playPayload } = await import('./plays.js');
+
+  const SECRET = 'not-a-real-password';
+  const loginCalls = [];
+  const session = await plays.loginBgg('jeff', SECRET, {
+    fetchImpl: async (url, init) => {
+      loginCalls.push({ url, init });
+      return {
+        ok: true,
+        status: 200,
+        headers: {
+          getSetCookie: () => [
+            'bggusername=jeff; Path=/',
+            'bggpassword=HASH; Path=/',
+            'SessionID=abc123; Path=/'
+          ],
+          get: () => null
+        },
+        text: async () => '{}'
+      };
+    }
+  });
+  assert.match(loginCalls[0].url, /boardgamegeek\.com\/login\/api\/v1/);
+  assert.doesNotMatch(loginCalls[0].url, /www\./);
+  const creds = JSON.parse(loginCalls[0].init.body);
+  assert.equal(creds.credentials.username, 'jeff');
+  assert.equal(creds.credentials.password, SECRET);
+  assert.match(session, /bggusername=jeff/);
+  assert.match(session, /SessionID=abc123/);
+  ok('login posts to boardgamegeek.com and keeps the session cookies');
+
+  try {
+    await plays.loginBgg('jeff', SECRET, {
+      fetchImpl: async () => ({
+        ok: false,
+        status: 400,
+        headers: { getSetCookie: () => [], get: () => null },
+        text: async () => `bad login ${SECRET}`
+      })
+    });
+    assert.fail('bad credentials should throw');
+  } catch (err) {
+    assert.equal(String(err.message).includes(SECRET), false, 'the password must not appear in the error');
+    assert.match(err.message, /login|credentials|password/i);
+  }
+  ok('a rejected login is an error that never echoes the password');
+
+  const payload = playPayload({
+    objectId: 13,
+    playdate: '2026-09-14',
+    location: 'Game Night',
+    players: [{ name: 'Alice', username: 'ada' }]
+  });
+  let posted;
+  await plays.logPlay(session, payload, {
+    fetchImpl: async (url, init) => {
+      posted = { url, init };
+      return { ok: true, status: 200, text: async () => '{"playid": 99}' };
+    }
+  });
+  assert.match(posted.url, /geekplay\.php/);
+  assert.match(posted.init.headers.cookie, /SessionID=abc123/);
+  const sent = JSON.parse(posted.init.body);
+  assert.equal(sent.objectid, 13);
+  assert.equal(sent.playdate, '2026-09-14');
+  ok('a play posts to geekplay.php with the session cookie');
+
   console.log(`\n\u2705 BGG XML API TESTS PASSED (${pass} checks) \u2705`);
 } finally {
   if (prev === undefined) delete process.env.BGG_APP_TOKEN;

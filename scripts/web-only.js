@@ -16,6 +16,7 @@ import dotenv from 'dotenv';
 import { startWebServer } from '../src/web/server.js';
 
 if (process.env.BGG_APP_TOKEN === '') delete process.env.BGG_APP_TOKEN;
+if (process.env.BGG_PASSWORD === '') delete process.env.BGG_PASSWORD;
 for (const p of ['data/.env', '.env']) {
   if (fs.existsSync(p)) dotenv.config({ path: p });
 }

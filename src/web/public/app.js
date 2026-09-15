@@ -628,6 +628,15 @@ function renderSettings() {
     ? `${plural(state.library.game_count, 'game', 'games')} in the library, last ${SOURCE_LABEL[state.library.source] || 'loaded'} ${prettyDate(state.library.synced_at.slice(0, 10), true)}.`
     : 'Nothing synced yet.';
 
+  $('#set-bgg-username').value = state.settings.bggUsername || '';
+  const bits = [];
+  if (state.settings.bggUsername) bits.push(`Plays will be logged as ${state.settings.bggUsername}`);
+  else bits.push('Set a BGG username here');
+  bits.push(state.settings.bggPasswordSet
+    ? 'password is set in data/.env'
+    : 'set BGG_PASSWORD in data/.env');
+  $('#bgg-login-hint').textContent = `${bits.join('; ')}.`;
+
   const s = state.stats;
   $('#storage-hint').textContent =
     `${s.dbPath} · ${plural(s.totalPlayers, 'player', 'players')} · ${plural(s.totalGames, 'night', 'nights')} · ${plural(s.backupCount, 'backup', 'backups')}`;
@@ -1054,7 +1063,8 @@ document.addEventListener('DOMContentLoaded', () => {
       reminderTime: $('#set-reminder').value,
       timezone: $('#set-tz').value.trim(),
       announcementsChannel: $('#set-announce').value.trim(),
-      notificationsChannel: $('#set-notify').value.trim()
+      notificationsChannel: $('#set-notify').value.trim(),
+      bggUsername: $('#set-bgg-username').value.trim()
     }
   }, 'Settings saved').catch(() => {});
 

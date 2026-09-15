@@ -38,6 +38,13 @@ import {
   buildBackRow
 } from './scheduleEditor.js';
 import { postClaimCall } from './hostCalls.js';
+import {
+  buildPickerMessage,
+  finishCheckin,
+  pickCheckinPlay,
+  searchCheckin,
+  submitCheckinSearch
+} from './checkin.js';
 
 // -------------------------------------------------------------
 // 4. INTERACTION ROUTING
@@ -130,13 +137,7 @@ function checkinHandler(status) {
       }
 
       const updated = db.markAsPlayed(gameId, status);
-      const embed = new EmbedBuilder()
-        .setTitle('Host Check-in')
-        .setColor(0x2ECC71)
-        .setDescription(`Got it — **${formatDateBeautiful(updated.game_date)}** is marked ${status}.`)
-        .setTimestamp();
-
-      await interaction.editReply({ embeds: [embed], components: [DISABLED_CHECKIN_ROW()] });
+      await interaction.editReply(buildPickerMessage(updated));
     } catch (err) {
       console.error('Check-in button error:', err.message);
     }
@@ -391,6 +392,11 @@ const buttonRoutes = new Map([
 
   ['checkin:yes',    checkinHandler('completed')],
   ['checkin:skip',   checkinHandler('skipped')],
+  ['checkin:search', async (i, [id]) => searchCheckin(i, Number(id))],
+  ['checkin:finish', async (i, [id]) => {
+    await i.deferUpdate();
+    await finishCheckin(i, Number(id));
+  }],
 
   ['host:swap',      hostSwapPrompt],
   ['host:out',       hostOut],
@@ -415,6 +421,11 @@ const selectRoutes = new Map([
       console.error('Schedule editor host change error:', err.message);
     }
     await i.editReply(buildEntryFocusMessage(Number(id)));
+  }],
+
+  ['checkin:pick', async (i, [id]) => {
+    await i.deferUpdate();
+    await pickCheckinPlay(i, Number(id));
   }],
 
   ['host:swapselect', async (i, [id]) => {
@@ -466,6 +477,8 @@ const modalRoutes = new Map([
     // A date change can reorder the list, so go back to the refreshed list view.
     await i.update(buildScheduleEditorMessage());
   }],
+
+  ['checkin:query', async (i, [id]) => submitCheckinSearch(i, Number(id))],
 
   ...setupModalRoutes
 ]);

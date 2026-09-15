@@ -585,6 +585,32 @@ try {
   assert.equal(configured.settings.bggToken, undefined, 'but the token itself never leaves the server');
   ok('the collection URL is validated and the access token is write-only');
 
+  const PLAY_SECRET = 'bgg-play-password-not-real';
+  const prevPlay = process.env.BGG_PASSWORD;
+  delete process.env.BGG_PASSWORD;
+  const withUser = (await req('PATCH', '/api/settings', { bggUsername: 'jeffwain' })).json;
+  assert.equal(withUser.settings.bggUsername, 'jeffwain');
+  assert.equal(withUser.settings.bggPasswordSet, false, 'username alone is not a login');
+  assert.equal(withUser.settings.bggPassword, undefined);
+
+  process.env.BGG_PASSWORD = PLAY_SECRET;
+  const withPass = (await req('GET', '/api/state')).json;
+  assert.equal(withPass.settings.bggPasswordSet, true);
+  assert.equal(withPass.settings.bggPassword, undefined);
+  assert.ok(!JSON.stringify(withPass).includes(PLAY_SECRET), 'the BGG password never leaves the server');
+
+  const stuffed = (await req('PATCH', '/api/settings', { bggPassword: PLAY_SECRET })).json;
+  assert.equal(stuffed.settings.bggPassword, undefined);
+  assert.ok(!JSON.stringify(stuffed).includes(PLAY_SECRET), 'a password in the PATCH body is ignored');
+
+  delete process.env.BGG_PASSWORD;
+  const wipedLogin = (await req('PATCH', '/api/settings', { bggUsername: '' })).json;
+  assert.equal(wipedLogin.settings.bggUsername, '');
+  assert.equal(wipedLogin.settings.bggPasswordSet, false);
+  if (prevPlay === undefined) delete process.env.BGG_PASSWORD;
+  else process.env.BGG_PASSWORD = prevPlay;
+  ok('BGG play username is in settings; the password is env-only');
+
   assert.equal((await req('GET', '/api/games/sync')).json.status, 'ok', 'sync status is pollable');
 
   // Saving just the collection fields must not disturb everything else, which

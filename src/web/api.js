@@ -163,6 +163,11 @@ function readState(client) {
       // Env-only XML API token. Same write-only pattern: the panel learns
       // whether Sync from BGG will work, never the bearer value.
       bggAppTokenSet: Boolean(String(process.env.BGG_APP_TOKEN || '').trim()),
+      // Account used to POST plays after check-in. Username is visible so
+      // you can see whose account will log; the password is BGG_PASSWORD in
+      // data/.env and never comes back.
+      bggUsername: settings.bggUsername || '',
+      bggPasswordSet: Boolean(String(process.env.BGG_PASSWORD || '').trim()),
       // What was captured, minus the secrets: enough for the panel to prove it
       // stored a real request without handing the cookies back to a browser.
       bggRequest: describeRequest(settings.bggRequest)
@@ -405,6 +410,12 @@ async function dispatch({ method, segments, body, deps }) {
       const token = String(body.bggToken ?? '').trim();
       db.updateSettings('bggToken', token || undefined);
     }
+    if ('bggUsername' in body) {
+      const username = String(body.bggUsername ?? '').trim();
+      db.updateSettings('bggUsername', username || undefined);
+    }
+    // bggPassword is env-only (BGG_PASSWORD). A value in the body is ignored
+    // so a stale panel cannot write it into db.json.
     // A reminder time that does not take effect until the next container
     // restart is a bug report waiting to happen. Rebuild the cron now.
     deps.onSettingsChanged?.();

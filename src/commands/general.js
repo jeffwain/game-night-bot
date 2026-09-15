@@ -93,7 +93,7 @@ export async function cmdHelp(interaction) {
       },
       {
         name: 'Host check-in — DM, the morning after your night',
-        value: '• **Yes, I hosted** — Marks the night completed. Nothing else changes.\n' +
+        value: '• **Yes, I hosted** — Marks the night completed, then asks what you played. Search, pick a match, repeat until **No**. Each game is logged to BoardGameGeek with you and everyone who was in.\n' +
                '• **Skipped / Rescheduled** — The night did not happen, so it is cancelled rather than ' +
                'handed to the next person. You keep your turn and move to the next slot, and everyone ' +
                'behind you slides back one week. Nobody loses their place in line.'

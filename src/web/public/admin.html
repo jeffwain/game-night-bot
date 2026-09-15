@@ -272,6 +272,22 @@
     </div>
 
     <div class="card">
+      <header><h2>Log plays to BoardGameGeek</h2></header>
+      <div class="body">
+        <div class="field">
+          <label for="set-bgg-username">BGG username</label>
+          <input id="set-bgg-username" autocomplete="username" spellcheck="false">
+        </div>
+        <p class="hint">
+          Used after a host check-in to log what you played, with everyone who was in.
+          The password is <code>BGG_PASSWORD</code> in <code>data/.env</code> — it never
+          lives in the database or on this page.
+        </p>
+        <p class="hint" id="bgg-login-hint"></p>
+      </div>
+    </div>
+
+    <div class="card">
       <header><h2>Storage</h2></header>
       <div class="body"><p class="hint" id="storage-hint"></p></div>
     </div>

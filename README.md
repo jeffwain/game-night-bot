@@ -109,6 +109,7 @@ Almost everything is `/admin config` or the Settings tab. From the environment:
 | `DISCORD_TOKEN` | Required |
 | `TZ` | Starting timezone until you set one in Discord |
 | `BGG_APP_TOKEN` | Optional, for collection sync |
+| `BGG_PASSWORD` | Optional, for logging plays after check-in |
 | `WEB_PORT` | Default `8120`. `0` disables the panel |
 | `WEB_ALLOW_REMOTE` | `true` drops the LAN check. Don't. |
 

@@ -174,10 +174,14 @@ ok(`all ${legacyIds.length} pre-upgrade component IDs still route (buttons alrea
 
 // Every ID the bot BUILDS must land on a route too. A button posted into a
 // channel with no handler is silent -- it just never does anything.
-for (const id of [cid('claim', 'take', 7), cid('host', 'out', 7), cid('checkin', 'skip', 7)]) {
+for (const id of [
+  cid('claim', 'take', 7), cid('host', 'out', 7), cid('checkin', 'skip', 7),
+  cid('checkin', 'search', 7), cid('checkin', 'pick', 7),
+  cid('checkin', 'finish', 7), cid('checkin', 'query', 7)
+]) {
   assert.ok(allRoutes.has(parseCid(id).key), `built id "${id}" has no route`);
 }
-ok('the open-host-call and skip buttons the bot posts all have live routes');
+ok('the open-host-call, skip, and play-picker buttons the bot posts all have live routes');
 
 assert.deepEqual(parseCid('edit_setdate_7_2026-08-11').args, ['7', '2026-08-11'], 'multi-arg legacy id');
 assert.equal(parseCid(cid('edit', 'setdate', 7, '2026-08-11')).key, 'edit:setdate', 'new format round-trips');
@@ -361,12 +365,6 @@ const huge = chunkToFields('One', ['x'.repeat(3000)]);
 assert.ok(huge[0].value.length <= 1024, 'a single over-long line is truncated, not rejected');
 ok('chunkToFields keeps every field under 1024 chars and drops no lines (60 players OK)');
 
-// ---------- /games ----------
-// The command and the Games tab must rank identically -- they import the same
-// scorer precisely so they cannot drift, and this is what proves the wiring.
-console.log('\n/games');
-const { searchGames, scoreGame, foldText } = await import('./web/public/search.js');
-
 const lib = [
   { id: 1, name: 'Terraforming Mars', original_name: 'Terraforming Mars', published: 2016, is_expansion: false,
     status: { own: [501] }, owner_count: 1, expansions: [{ id: 9, name: 'Terraforming Mars: Hellas & Elysium' }],
@@ -381,6 +379,110 @@ const lib = [
     rating: { average: null, group_average: null, bgg_average: 7.6 },
     plays: { last_play: null, total_plays: 0 } }
 ];
+
+// ---------- LOGGED PLAYS ----------
+// Host check-in asks what got played and posts each one to BGG with the host
+// plus everyone who RSVP'd "I'm in". These are the rules that payload is built
+// from; the Discord buttons and the HTTP post are wired separately.
+console.log('\nLogged plays');
+const { attendeesForPlay, searchPlayables, playPayload } = await import('./plays.js');
+
+const group = [
+  { id: 1, name: 'Alice', discord_id: '11', bgg_username: 'ada' },
+  { id: 2, name: 'Bob', discord_id: '22', bgg_username: 'bob' },
+  { id: 3, name: 'Cara', discord_id: '33', bgg_username: null },
+  { id: 4, name: 'Dan', discord_id: '44', bgg_username: 'dan' }
+];
+const night = {
+  player_id: 1,
+  playerName: 'Alice',
+  playerDiscordId: '11',
+  rsvps: { 11: 'going', 22: 'going', 33: 'tentative', 44: 'out', 99: 'going' }
+};
+
+const table = attendeesForPlay(night, group);
+assert.deepEqual(table.map(p => p.name), ['Alice', 'Bob'],
+  'host + I\'m in only; maybes, outs, and strangers off the roster are dropped');
+assert.equal(table[0].username, 'ada');
+assert.equal(table[1].username, 'bob');
+ok('a logged play seats the host and everyone marked I\'m in');
+
+const hostOut = attendeesForPlay({ ...night, rsvps: { 11: 'out', 22: 'going' } }, group);
+assert.deepEqual(hostOut.map(p => p.name), ['Alice', 'Bob'],
+  'the host is on the play even if they RSVP\'d out of their own night');
+ok('the host is always on the play');
+
+const playables = searchPlayables(lib, 'seafarers');
+assert.equal(playables.length, 1);
+assert.equal(playables[0].id, 8, 'picking an expansion logs that id, not the base game');
+assert.match(playables[0].label, /Seafarers/);
+assert.equal(searchPlayables(lib, 'zzzz').length, 0);
+assert.equal(searchPlayables(lib, '').length, 0, 'a blank search is not a dump of the library');
+ok('play search treats expansions as their own pick');
+
+const body = playPayload({
+  objectId: 13,
+  playdate: '2026-09-14',
+  location: 'Dice Monster',
+  players: table
+});
+assert.equal(body.action, 'save');
+assert.equal(body.objectid, 13);
+assert.equal(body.playdate, '2026-09-14');
+assert.equal(body.location, 'Dice Monster');
+assert.deepEqual(body.players.map(p => p.username), ['ada', 'bob']);
+ok('the geekplay body names the game, the night, and the table');
+
+db.appendSchedule([{ player_id: 1, game_date: '2099-03-01' }]);
+const loggedNight = db.getSchedule().find(s => s.game_date === '2099-03-01');
+db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan' });
+db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan' });
+db.appendLoggedPlay(loggedNight.id, { id: 8, name: 'Catan: Seafarers' });
+assert.deepEqual(
+  db.getSchedule().find(s => s.id === loggedNight.id).logged_plays.map(p => p.id),
+  [13, 8]
+);
+ok('picked games persist on the night and duplicates are ignored');
+
+const { finishLoggedPlays } = await import('./checkin.js');
+db.updateSettings('displayName', 'Dice Monster');
+db.setRsvp(loggedNight.id, '11', 'going');
+const posted = [];
+const finished = await finishLoggedPlays(loggedNight.id, {
+  logPlaysFn: async (creds, payloads) => {
+    posted.push({ creds, payloads });
+    return payloads.map(p => ({ ok: true, objectid: p.objectid }));
+  }
+});
+assert.match(finished.skipped, /BGG_PASSWORD/, 'without a BGG login the plays stay local');
+assert.equal(posted.length, 0);
+db.updateSettings('bggUsername', 'jeff');
+const prevPlayPass = process.env.BGG_PASSWORD;
+process.env.BGG_PASSWORD = 'secret';
+const sent = await finishLoggedPlays(loggedNight.id, {
+  logPlaysFn: async (creds, payloads) => {
+    posted.push({ creds, payloads });
+    return payloads.map(p => ({ ok: true, objectid: p.objectid }));
+  }
+});
+if (prevPlayPass === undefined) delete process.env.BGG_PASSWORD;
+else process.env.BGG_PASSWORD = prevPlayPass;
+assert.equal(sent.skipped, null);
+assert.equal(posted[0].creds.username, 'jeff');
+assert.equal(posted[0].payloads.length, 2);
+assert.equal(posted[0].payloads[0].location, 'Dice Monster');
+assert.equal(posted[0].payloads[0].playdate, '2099-03-01');
+ok('finishing check-in posts each picked game with the table and the night\'s date');
+
+db.updateSettings('bggPassword', 'legacy-secret');
+assert.equal('bggPassword' in db.getSettings(), false, 'an old db.json password is dropped, not kept');
+ok('a leftover settings.bggPassword is stripped on read');
+
+// ---------- /games ----------
+// The command and the Games tab must rank identically -- they import the same
+// scorer precisely so they cannot drift, and this is what proves the wiring.
+console.log('\n/games');
+const { searchGames, scoreGame, foldText } = await import('./web/public/search.js');
 
 // Expansions are hidden unless asked for -- the default the command uses.
 assert.deepEqual(searchGames(lib, 'catan', { includeExpansions: false }).map(h => h.game.id), [2],

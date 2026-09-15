@@ -1001,6 +1001,26 @@ export function markGameAsReminded(gameId) {
   }
 }
 
+// Games the host picked during check-in. Posted to BGG when they press No.
+export function appendLoggedPlay(gameId, play) {
+  const db = readDb();
+  const entry = db.schedule.find(s => s.id === Number(gameId));
+  if (!entry) throw new Error(`Schedule entry ID ${gameId} not found.`);
+
+  const id = Number(play?.id);
+  const name = String(play?.name || '').trim();
+  if (!Number.isInteger(id) || id <= 0) throw new Error('A logged play needs a BGG id.');
+
+  if (!Array.isArray(entry.logged_plays)) entry.logged_plays = [];
+  if (entry.logged_plays.some(p => Number(p.id) === id)) {
+    return getSchedule().find(s => s.id === Number(gameId));
+  }
+
+  entry.logged_plays.push({ id, name });
+  writeDbSync(db);
+  return getSchedule().find(s => s.id === Number(gameId));
+}
+
 export function setRsvp(gameId, discordUserId, status) {
   const db = readDb();
   const entry = db.schedule.find(s => s.id === Number(gameId));
@@ -1038,7 +1058,14 @@ export function markSummarySent(gameId) {
 
 export function getSettings() {
   const db = readDb();
-  return db.settings || {};
+  if (!db.settings) db.settings = {};
+  // Play-logging password used to live here. It belongs in data/.env
+  // (BGG_PASSWORD) so it is not copied into every backup of db.json.
+  if (Object.prototype.hasOwnProperty.call(db.settings, 'bggPassword')) {
+    delete db.settings.bggPassword;
+    writeDbSync(db);
+  }
+  return db.settings;
 }
 
 export function updateSettings(key, value) {
