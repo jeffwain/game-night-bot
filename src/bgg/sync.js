@@ -12,6 +12,7 @@ import * as db from '../database.js';
 import * as library from '../games.js';
 import { normalize } from './normalize.js';
 import { normalizeCsv } from './csv.js';
+import { supplement } from './supplement.js';
 import { fetchAllPages, probeCollection } from './geekgroup.js';
 import { getAppToken, authHeaders, fetchCollections, parseCollectionXml, parseThingParents, mergeExpansionFlag, toLibrary, redact } from './xmlapi.js';
 
@@ -247,40 +248,80 @@ function resolveImport(filename) {
   }
 }
 
+// Parse an import file into a library payload, without deciding what to do
+// with it. Both import modes need exactly this and differ only afterwards.
+function libraryFromImport(name, text, source) {
+  if (name.toLowerCase().endsWith('.csv')) {
+    return { payload: normalizeCsv(text, db.getAllPlayers(), { source }), pages: 1, text };
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (err) {
+    throw new Error(`"${name}" is not valid JSON.`, { cause: err });
+  }
+  const pages = Array.isArray(parsed) ? parsed : [parsed];
+  if (!pages.some(p => Array.isArray(p?.collection))) {
+    throw new Error(`"${name}" does not look like a Geekgroup collection dump.`);
+  }
+  return {
+    payload: normalize(pages, db.getAllPlayers(), { source }),
+    pages: pages.length,
+    rawPages: pages
+  };
+}
+
 /**
  * Rebuild the library from a dump sitting in data/bgg-import/. Synchronous --
  * it is a file read, not a crawl.
  *
  * A .json file may be a single page body or an array of them; a multi-page
  * capture saved as one file is the obvious thing for someone to do.
+ *
+ * Two modes, because a Geekgroup dump is useful in two different ways:
+ *
+ *   'replace'    the dump becomes the library. What this has always done, and
+ *                the right answer when Geekgroup is the only source there is.
+ *   'supplement' the dump fills the holes in the library already on disk --
+ *                weight, best/recommended players, value, the group rating --
+ *                and touches nothing else. The right answer once a BGG sync
+ *                has supplied artwork and real per-person ownership.
+ *
+ * A supplement deliberately does not archive into data/bgg-raw/. That archive
+ * is what rebuildFromArchive() replays, and writing a Geekgroup run into it
+ * would leave the next Rebuild reconstructing the library from the supplement
+ * rather than from the BGG sync it was supplementing. The file stays in
+ * data/bgg-import/, which is durable on its own.
  */
-export function importFromFile(filename) {
+export function importFromFile(filename, { mode = 'replace' } = {}) {
   const { name, text } = resolveImport(filename);
+  const supplementing = mode === 'supplement';
 
-  begin('import');
+  begin(supplementing ? 'supplement' : 'import');
   try {
-    let payload;
+    const isCsv = name.toLowerCase().endsWith('.csv');
+    // As the library, a dump is labelled by how it arrived ("imported"). As a
+    // supplement it is labelled by what it is, since that is what the panel
+    // reports it as: gaps filled from Geekgroup, or from its CSV export.
+    const source = isCsv ? 'csv' : (supplementing ? 'geekgroup' : 'import');
+    const { payload: parsedLibrary, pages, text: csvText, rawPages } = libraryFromImport(name, text, source);
 
-    if (name.toLowerCase().endsWith('.csv')) {
-      payload = normalizeCsv(text, db.getAllPlayers(), { source: 'csv' });
-      library.archiveRawText(text, 'csv');
+    let payload;
+    if (supplementing) {
+      const current = library.readLibrary();
+      if (!(current.games || []).length) {
+        throw new Error('There is no library to supplement yet. Sync from BoardGameGeek first, or import this file instead.');
+      }
+      payload = supplement(current, parsedLibrary);
       library.writeLibrary(payload);
-      syncState = { ...syncState, page: 1, pages: 1 };
     } else {
-      let parsed;
-      try {
-        parsed = JSON.parse(text);
-      } catch (err) {
-        throw new Error(`"${name}" is not valid JSON.`, { cause: err });
-      }
-      const pages = Array.isArray(parsed) ? parsed : [parsed];
-      if (!pages.some(p => Array.isArray(p?.collection))) {
-        throw new Error(`"${name}" does not look like a Geekgroup collection dump.`);
-      }
-      payload = rebuild(pages, 'import');
-      syncState = { ...syncState, page: pages.length, pages: pages.length };
+      if (csvText !== undefined) library.archiveRawText(csvText, 'csv');
+      else library.archiveRaw(rawPages || []);
+      payload = library.writeLibrary(parsedLibrary);
     }
 
+    syncState = { ...syncState, page: pages, pages };
     finish();
     return payload;
   } catch (err) {

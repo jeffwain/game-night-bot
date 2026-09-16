@@ -76,10 +76,30 @@ try {
   const gamesTab = (await req('GET', '/')).text;
   assert.ok(gamesTab.includes('id="games-search"'), 'search is on the Games tab');
   assert.ok(gamesTab.includes('id="games-expansions"'), 'Show expansions is a checkbox');
-  assert.ok(gamesTab.includes('id="games-owned"'), 'Owned only is a checkbox');
   assert.match(gamesTab, /Show expansions/);
-  assert.match(gamesTab, /Owned only/);
+  assert.ok(gamesTab.includes('id="games-statuses"'), 'the status chips have a home on the Games tab');
+  assert.ok(gamesTab.includes('id="games-update"'), 'the Games tab offers Update collection');
   assert.ok(gamesTab.includes('id="games-upload"'), 'the import card can take a file from the browser');
+
+  // Import moved off the Games tab, where it sat below a thousand rows, and into
+  // the one Settings card that explains the whole process.
+  const section = (html, id) => {
+    const start = html.indexOf(`<section id="${id}"`);
+    return html.slice(start, html.indexOf('</section>', start));
+  };
+  const games = section(gamesTab, 'tab-games');
+  const settings = section(gamesTab, 'tab-settings');
+  assert.ok(!games.includes('id="games-upload"'), 'import is no longer at the bottom of the Games tab');
+  assert.ok(settings.includes('id="collection-card"'), 'the collection card is on Settings');
+  for (const id of ['collection-sync-bgg', 'collection-rebuild', 'set-bgg-request', 'bgg-test',
+    'games-import-file', 'games-upload', 'games-supplement', 'games-import']) {
+    const at = gamesTab.indexOf(`id="${id}"`);
+    const card = gamesTab.indexOf('id="collection-card"');
+    const next = gamesTab.indexOf('<div class="card">', card + 1);
+    assert.ok(at > card && at < next, `${id} lives inside the Update collection card`);
+  }
+  assert.ok(gamesTab.indexOf('collection-sync-bgg') < gamesTab.indexOf('games-supplement'),
+    'the card puts the BGG sync before the Geekgroup supplement, in the order you do them');
   assert.equal((await req('GET', '/not-an-asset.js')).status, 404, 'the asset allowlist stays closed');
   ok('the panel loads as an ES module and its shared scorer resolves');
 
@@ -575,6 +595,53 @@ try {
   const unlinked = await req('PATCH', `/api/players/${grace.id}`, { bgg_user_id: null });
   assert.equal(unlinked.json.players.find(p => p.id === grace.id).bgg_user_id, null);
   ok('a BGG link can be cleared again');
+
+  // Supplementing: a BGG library already on disk, a Geekgroup dump filling its
+  // gaps. The BGG side carries artwork and ownership the dump disagrees with.
+  const bggShaped = {
+    synced_at: '2026-09-15T02:00:00.000Z',
+    source: 'bgg',
+    users: [bggUser(501, 'ada', 'Ada Lovelace')],
+    games: [{
+      id: 13, name: 'Catan', original_name: 'Catan', published: 1995, is_expansion: false,
+      image: 'https://cf.geekdo-images.com/catan.jpg', thumbnail: 'https://cf.geekdo-images.com/catan-small.jpg',
+      status: { ...statuses([501]), prev_owned: [888] }, owner_count: 1,
+      rating: { average: 9, bgg_average: 7.14, group_average: null, rating_count: 1, group_votes: 0, users: { 501: 9 } },
+      plays: { last_play: null, total_plays: 0, users: {} },
+      details: { players_min: 3, players_max: 4, players_best: [], players_recommended: [],
+        time_min: 60, time_max: 120, weight: null, rank: 400, value: null },
+      expansions: []
+    }]
+  };
+  fs.writeFileSync(`${DIR}/games.json`, JSON.stringify(bggShaped));
+
+  const badMode = await req('POST', '/api/games/import', { file: 'dump.json', mode: 'merge' });
+  assert.equal(badMode.status, 400, 'an unknown import mode is refused');
+  assert.match(badMode.json.error, /replace|supplement/);
+
+  assert.equal((await req('POST', '/api/games/import', { file: 'dump.json', mode: 'supplement' })).status, 200);
+  lib = (await req('GET', '/api/games')).json;
+  const supplemented = lib.games.find(g => g.id === 13);
+  assert.equal(lib.games.length, 1, 'supplementing adds no rows from the dump');
+  assert.equal(lib.meta.source, 'bgg', 'the library is still the BGG sync');
+  assert.equal(lib.meta.supplement_source, 'geekgroup');
+  assert.equal(lib.meta.supplemented_count, 1);
+  assert.equal(lib.meta.image_count, 1, 'meta counts the games with artwork');
+  assert.equal(supplemented.image, 'https://cf.geekdo-images.com/catan.jpg', 'artwork survives a supplement');
+  assert.deepEqual(supplemented.status.own, [501], "ownership is BGG's, not the dump's [501, 502]");
+  assert.deepEqual(supplemented.status.prev_owned, [888], 'every other status is left alone too');
+  assert.equal(supplemented.rating.average, 9, 'our average is not recomputed from the dump');
+  assert.equal(supplemented.rating.group_average, 6.4, 'the group rating comes from Geekgroup');
+  ok('a Geekgroup dump supplements a BGG library without replacing what BGG owns');
+
+  fs.writeFileSync(`${DIR}/games.json`, JSON.stringify({ synced_at: null, source: null, users: [], games: [] }));
+  const nothing = await req('POST', '/api/games/import', { file: 'dump.json', mode: 'supplement' });
+  assert.equal(nothing.status, 400, 'there is nothing to supplement before a first sync');
+  assert.match(nothing.json.error, /no library to supplement/i);
+  ok('supplementing an empty library says so instead of writing a blank one');
+
+  // Put the replace-mode library back for the tests below.
+  assert.equal((await req('POST', '/api/games/import', { file: 'dump.json' })).status, 200);
 
   // Sync is configured entirely through settings, and refuses to run unconfigured.
   const unconfigured = await req('POST', '/api/games/sync');

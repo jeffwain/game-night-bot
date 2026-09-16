@@ -118,54 +118,19 @@
         <h2>Games</h2>
         <span class="sub" id="games-sub"></span>
         <span class="spacer"></span>
-        <button class="btn sm" id="games-sync">Sync now</button>
         <button class="btn sm" id="games-sync-bgg">Sync from BGG</button>
+        <button class="btn sm" id="games-update">Update collection</button>
       </header>
       <div class="games-tools">
         <input id="games-search" type="search" placeholder="Search games…"
                aria-label="Search games by name" autocomplete="off">
         <label><input type="checkbox" id="games-expansions"> Show expansions</label>
-        <label><input type="checkbox" id="games-owned" checked> Owned only</label>
       </div>
+      <div class="games-tools status-filter" id="games-statuses" role="group"
+           aria-label="Filter by collection status"></div>
       <div class="rows games" id="game-rows"></div>
     </div>
 
-    <div class="card">
-      <header>
-        <h2>Import a dump</h2>
-        <span class="sub">Geekgroup JSON or CSV</span>
-      </header>
-      <div class="body">
-        <div class="form-row">
-          <div class="field">
-            <label for="games-import-file">File</label>
-            <select id="games-import-file"></select>
-          </div>
-          <div class="actions">
-            <input type="file" id="games-upload" accept=".json,.csv" hidden
-                   aria-label="Upload a Geekgroup dump">
-            <button type="button" class="btn quiet" id="games-upload-btn">Upload</button>
-            <button class="btn" id="games-import">Import</button>
-            <button class="btn quiet" id="games-rebuild">Rebuild</button>
-          </div>
-        </div>
-        <p class="hint">
-          On
-          <a href="https://geekgroup.app" target="_blank" rel="noreferrer noopener">geekgroup.app</a>,
-          open the collection with the network tab recording, save the
-          <code>collection.json</code> response (one page, or an array of pages),
-          or download the group's CSV export. <strong>Upload</strong> it here,
-          or copy it into <code>data/bgg-import/</code> on the host. CSV has
-          no per-person owners or ratings.
-        </p>
-        <p class="hint">
-          <strong>Rebuild</strong> ignores that file. It re-parses the latest
-          run in <code>data/bgg-raw/</code> from <strong>Sync from BGG</strong>
-          or a Geekgroup curl sync, without fetching again.
-        </p>
-        <p class="hint" id="games-import-hint"></p>
-      </div>
-    </div>
   </section>
 
   <!-- ------------------------------------------------------------- PLAYERS -->
@@ -253,42 +218,117 @@
       </div>
     </div>
 
-    <div class="card">
-      <header><h2>Board game collection</h2></header>
+    <div class="card" id="collection-card">
+      <header>
+        <h2>Update collection</h2>
+        <span class="sub" id="collection-sub"></span>
+      </header>
       <div class="body">
-        <div class="field">
-          <label for="set-bgg-request">Captured request</label>
-          <textarea id="set-bgg-request" rows="4" spellcheck="false" autocomplete="off"
-                    data-1p-ignore data-lpignore="true"
-                    placeholder="curl 'https://api.geekgroup.app/api/groups/collection.json' -X POST -H 'Authorization: …' --data-raw '{…}'"></textarea>
-        </div>
-        <div class="form-row">
-          <div class="actions">
-            <button class="btn primary" id="bgg-save">Save request</button>
-            <button class="btn quiet" id="bgg-test">Test</button>
+        <p class="hint">
+          The Games tab is built from one file, <code>data/games.json</code>, rebuilt from scratch every
+          time you update. Two sources can feed it and they answer different questions, so the usual
+          answer is <strong>both</strong>: BoardGameGeek first, then Geekgroup over the top.
+        </p>
+
+        <div class="step">
+          <h3><span class="step-n">1</span> Sync from BoardGameGeek</h3>
+          <p class="hint">
+            The primary source, and the only one with <strong>box art</strong> and <strong>per-person
+            statuses</strong> — who owns what, who previously owned it, who has it on a wishlist or wants
+            to play it. Every status on this list is what the filter chips on the Games tab filter by.
+            It pulls each linked player's collection directly, with no browser session involved.
+          </p>
+          <div class="form-row">
+            <div class="actions">
+              <button class="btn primary" id="collection-sync-bgg">Sync from BGG</button>
+              <button class="btn quiet" id="collection-rebuild">Rebuild without fetching</button>
+            </div>
           </div>
+          <p class="hint">
+            Needs <code>BGG_APP_TOKEN</code> in <code>data/.env</code> (register at
+            <a href="https://boardgamegeek.com/applications" target="_blank" rel="noreferrer noopener">boardgamegeek.com/applications</a>)
+            and at least one player linked to a BGG account on the Players tab. The token never comes
+            back to this page. <strong>Rebuild</strong> re-parses the last sync already saved under
+            <code>data/bgg-raw/</code> — the thing to press after linking a new player, since that
+            changes whose ratings count.
+          </p>
+          <p class="hint" id="collection-bgg-hint"></p>
         </div>
-        <p class="hint">
-          On <a href="https://geekgroup.app" target="_blank" rel="noreferrer noopener">geekgroup.app</a>, open your
-          group's collection with the browser's network tab recording. Right-click the
-          <code>collection.json</code> request → <strong>Copy → Copy as cURL</strong>, and paste the whole thing
-          here. Then press <strong>Test</strong>.
-        </p>
-        <p class="hint">
-          It has to be the whole request, not just the URL: this is an undocumented <code>POST</code> whose
-          JSON body carries the group and filters, and whose sign-in rides on session cookies. Ask for it
-          without those and the API answers <em>200</em> with a large public group instead of an error — so
-          the sync checks the page count and stops rather than quietly pulling ten thousand strangers' games.
-        </p>
-        <p class="hint">
-          For a pull that does not depend on a browser session, set
-          <code>BGG_APP_TOKEN</code> in <code>data/.env</code> (register at
-          <a href="https://boardgamegeek.com/applications" target="_blank" rel="noreferrer noopener">boardgamegeek.com/applications</a>)
-          and link players to BGG accounts, then use <strong>Sync from BGG</strong> on the Games tab.
-          That token never comes back to this page.
-        </p>
-        <p class="hint" id="bgg-request-summary"></p>
-        <p class="hint" id="bgg-hint"></p>
+
+        <div class="step">
+          <h3><span class="step-n">2</span> Supplement from Geekgroup <span class="pill">Optional</span></h3>
+          <p class="hint">
+            Geekgroup knows four things BoardGameGeek's collection API will not tell us without a
+            request per twenty games: <strong>weight</strong>, the community's <strong>best and
+            recommended player counts</strong>, <strong>estimated value</strong>, and your group's own
+            <strong>group rating</strong>. Supplementing fills those gaps and refreshes the group
+            rating. It never touches ownership, statuses or box art — the Geekgroup dump covers everyone
+            in the group, including people who are not in this Discord.
+          </p>
+          <div class="field">
+            <label for="set-bgg-request">Captured request</label>
+            <textarea id="set-bgg-request" rows="4" spellcheck="false" autocomplete="off"
+                      data-1p-ignore data-lpignore="true"
+                      placeholder="curl 'https://api.geekgroup.app/api/groups/collection.json' -X POST -H 'Authorization: …' --data-raw '{…}'"></textarea>
+          </div>
+          <div class="form-row">
+            <div class="actions">
+              <button class="btn" id="bgg-save">Save request</button>
+              <button class="btn quiet" id="bgg-test">Test</button>
+              <button class="btn quiet" id="games-sync">Sync from Geekgroup</button>
+            </div>
+          </div>
+          <p class="hint">
+            On <a href="https://geekgroup.app" target="_blank" rel="noreferrer noopener">geekgroup.app</a>, open your
+            group's collection with the browser's network tab recording. Right-click the
+            <code>collection.json</code> request → <strong>Copy → Copy as cURL</strong>, and paste the whole thing
+            here. Then press <strong>Test</strong>.
+          </p>
+          <p class="hint">
+            It has to be the whole request, not just the URL: this is an undocumented <code>POST</code> whose
+            JSON body carries the group and filters, and whose sign-in rides on session cookies. Ask for it
+            without those and the API answers <em>200</em> with a large public group instead of an error — so
+            the sync checks the page count and stops rather than quietly pulling ten thousand strangers' games.
+          </p>
+          <p class="hint">
+            <strong>Sync from Geekgroup</strong> replaces the whole library with the Geekgroup crawl —
+            the right call only when Geekgroup is your only source, since it has no box art. To keep a
+            BGG sync and fill its gaps, use a saved dump below instead.
+          </p>
+          <p class="hint" id="bgg-request-summary"></p>
+          <p class="hint" id="bgg-hint"></p>
+        </div>
+
+        <div class="step">
+          <h3><span class="step-n">3</span> Or work from a saved dump</h3>
+          <p class="hint">
+            No session to capture, and the same two choices. Save the <code>collection.json</code>
+            response from the network tab (one page, or an array of pages) or download the group's CSV
+            export, then <strong>Upload</strong> it here — or copy it into <code>data/bgg-import/</code>
+            on the host.
+          </p>
+          <div class="form-row">
+            <div class="field">
+              <label for="games-import-file">File</label>
+              <select id="games-import-file"></select>
+            </div>
+            <div class="actions">
+              <input type="file" id="games-upload" accept=".json,.csv" hidden
+                     aria-label="Upload a Geekgroup dump">
+              <button type="button" class="btn quiet" id="games-upload-btn">Upload</button>
+              <button class="btn primary" id="games-supplement">Supplement</button>
+              <button class="btn quiet" id="games-import">Replace library</button>
+            </div>
+          </div>
+          <p class="hint">
+            <strong>Supplement</strong> keeps the library you have and fills in only the four fields
+            above — the normal choice after a BGG sync. <strong>Replace library</strong> throws the
+            current library away and rebuilds it from this file alone. A CSV export carries weight and
+            player counts for everything, but no per-person owners or ratings, so replacing with one
+            costs you the Owned by column.
+          </p>
+          <p class="hint" id="games-import-hint"></p>
+        </div>
       </div>
     </div>
 

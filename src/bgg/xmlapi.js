@@ -106,6 +106,11 @@ function firstTag(xml, name) {
   return { attrs: attrs(m[1] || ''), text: decode(m[2] || '') };
 }
 
+function textOrNull(tag) {
+  const text = String(tag?.attrs?.value ?? tag?.text ?? '').trim();
+  return text || null;
+}
+
 function numberOrNull(value) {
   const text = String(value ?? '').trim();
   if (!text || /^n\/a$/i.test(text)) return null;
@@ -140,6 +145,8 @@ export function parseCollectionXml(xml) {
     const average = firstTag(body, 'average');
     const status = firstTag(body, 'status');
     const plays = firstTag(body, 'numplays');
+    const image = firstTag(body, 'image');
+    const thumbnail = firstTag(body, 'thumbnail');
     const subtype = String(head.subtype || head.type || '');
 
     const flags = parseStatusFlags(status.attrs);
@@ -149,6 +156,11 @@ export function parseCollectionXml(xml) {
       name: name.attrs.value || name.text || `Game ${id}`,
       published: numberOrNull(year.attrs.value || year.text),
       is_expansion: /expansion/i.test(subtype),
+      // Plenty of items have no artwork. null rather than '' so the merge in
+      // toLibrary can tell "nobody has a picture" from "this user's copy does
+      // not", and the panel has one thing to test before rendering an <img>.
+      image: textOrNull(image),
+      thumbnail: textOrNull(thumbnail),
       own: flags.own,
       status: flags,
       rating: numberOrNull(rating.attrs.value),
@@ -237,6 +249,8 @@ export function toLibrary(collections, players = [], { parents = new Map(), sync
           original_name: item.name,
           published: item.published,
           is_expansion: item.is_expansion,
+          image: item.image,
+          thumbnail: item.thumbnail,
           status: emptyStatus(),
           owner_count: 0,
           rating: {
@@ -263,6 +277,11 @@ export function toLibrary(collections, players = [], { parents = new Map(), sync
       if (game.rating.bgg_average == null && item.bgg_average != null) {
         game.rating.bgg_average = item.bgg_average;
       }
+      // Artwork is a property of the game, not of anyone's copy, but BGG only
+      // sends it on items that have one. First sighting wins; a later user
+      // whose row came back bare must not blank out a picture we already have.
+      if (game.image == null && item.image != null) game.image = item.image;
+      if (game.thumbnail == null && item.thumbnail != null) game.thumbnail = item.thumbnail;
     }
   }
 
@@ -285,6 +304,7 @@ export function toLibrary(collections, players = [], { parents = new Map(), sync
         id: game.id,
         name: game.name,
         published: game.published,
+        thumbnail: game.thumbnail,
         status: game.status
       });
       continue;

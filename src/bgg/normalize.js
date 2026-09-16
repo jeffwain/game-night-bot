@@ -172,6 +172,10 @@ function normalizeRating(entry, memberIds) {
     bgg_average: numberOrNull(entry.game?.rating_avg),
     group_average: numberOrNull(entry.group?.rating_avg),
     rating_count: Number(entry.game?.rating_count) || 0,
+    // How many of the group voted, which is not the BGG-wide rating_count
+    // above. The CSV export has carried this since day one; without it here a
+    // JSON sync silently loses the column a CSV import fills in.
+    group_votes: Number(entry.group?.rating_count) || 0,
     users: perUser
   };
 }

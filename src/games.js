@@ -56,12 +56,18 @@ export function getGamesUsers() {
 
 export function getGamesMeta() {
   const library = readLibrary();
+  const games = library.games || [];
   return {
     synced_at: library.synced_at || null,
     source: library.source || null,
-    game_count: (library.games || []).length,
-    expansion_count: (library.games || []).reduce((n, g) => n + (g.expansions?.length || 0), 0),
-    user_count: (library.users || []).length
+    game_count: games.length,
+    expansion_count: games.reduce((n, g) => n + (g.expansions?.length || 0), 0),
+    user_count: (library.users || []).length,
+    // Null until a Geekgroup dump has been folded in on top of a sync.
+    supplement_source: library.supplement_source || null,
+    supplemented_at: library.supplemented_at || null,
+    supplemented_count: library.supplemented_count || 0,
+    image_count: games.filter(g => g.thumbnail || g.image).length
   };
 }
 

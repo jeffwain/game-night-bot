@@ -17,6 +17,8 @@ const COLLECTION = `<?xml version="1.0" encoding="utf-8"?>
   <item objecttype="thing" objectid="13" subtype="boardgame" collid="1">
     <name sortindex="1">Catan</name>
     <yearpublished>1995</yearpublished>
+    <image>https://cf.geekdo-images.com/original/img/catan.jpg</image>
+    <thumbnail>https://cf.geekdo-images.com/small/img/catan.jpg</thumbnail>
     <stats minplayers="3" maxplayers="4" minplaytime="60" maxplaytime="120">
       <rating value="8">
         <average value="7.14"/>
@@ -115,6 +117,12 @@ try {
   assert.equal(items[1].rating, null, 'N/A is not a rating');
   ok('collection XML becomes the fields the library already stores');
 
+  assert.equal(items[0].image, 'https://cf.geekdo-images.com/original/img/catan.jpg');
+  assert.equal(items[0].thumbnail, 'https://cf.geekdo-images.com/small/img/catan.jpg');
+  assert.equal(items[1].image, null, 'an item with no artwork reports null, not an empty string');
+  assert.equal(items[1].thumbnail, null);
+  ok('collection XML carries the game artwork the Games tab shows');
+
   const WISH = `<?xml version="1.0" encoding="utf-8"?>
 <items totalitems="1">
   <item objecttype="thing" objectid="421" subtype="boardgame" collid="3">
@@ -187,6 +195,24 @@ try {
   assert.ok(library.games.find(g => g.id === 999), 'a game with no parent stays a row');
   assert.deepEqual(library.users.map(u => u.username), ['ada', 'grace']);
   ok('two collections merge into the same library shape Geekgroup writes');
+
+  assert.equal(catan.image, 'https://cf.geekdo-images.com/original/img/catan.jpg',
+    'artwork survives the merge into the library');
+  assert.equal(catan.thumbnail, 'https://cf.geekdo-images.com/small/img/catan.jpg');
+  assert.equal(catan.expansions[0].thumbnail, null,
+    "an expansion with no artwork carries null rather than inheriting its parent's");
+
+  // Only one of the two collections has the artwork. Whichever arrives first,
+  // the game ends up with it: a null from a later user must not erase it.
+  const stripped = { userId: 503, username: 'hopper', items: xmlapi.parseCollectionXml(COLLECTION) };
+  for (const item of stripped.items) { item.image = null; item.thumbnail = null; }
+  for (const order of [[stripped, ada], [ada, stripped]]) {
+    const merged = xmlapi.toLibrary(order, players, { parents });
+    assert.equal(merged.games.find(g => g.id === 13).image,
+      'https://cf.geekdo-images.com/original/img/catan.jpg',
+      'the first collection to carry artwork wins, in either order');
+  }
+  ok('artwork reaches the library and is never overwritten with a blank');
 
   let calls = 0;
   const fetchImpl = async (url, init) => {

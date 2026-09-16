@@ -11,7 +11,7 @@
  * five or fifteen rows readable instead of turning the page into a form grid.
  */
 
-import { searchGames } from './search.js';
+import { searchGames, STATUSES, STATUS_LABELS, hasStatus } from './search.js';
 
 // A module, not a classic script, so it can import the shared scorer. Modules
 // are strict and deferred by default, which is what the DOMContentLoaded
@@ -24,7 +24,9 @@ let proposal = null;
 let library = null;
 let gameFilter = '';
 let showExpansions = false;
-let ownedOnly = true;
+// Which collection statuses the Games tab is showing. Owned alone is the old
+// "Owned only" default; an empty set means no status filter at all.
+let pickedStatuses = new Set(['own']);
 let syncPoll = null;
 
 // ---------------------------------------------------------------- helpers
@@ -425,8 +427,30 @@ function renderPlayers() {
 function filteredGames() {
   return searchGames(library?.games || [], gameFilter, {
     includeExpansions: showExpansions,
-    ownedOnly
+    statuses: [...pickedStatuses]
   }).map(hit => hit.game);
+}
+
+// One chip per status, each carrying how many games would match it on its own.
+// The count is what makes the row worth having: it says at a glance that
+// nobody has anything for trade, without having to click it to find out.
+function renderStatusChips() {
+  const box = $('#games-statuses');
+  if (!box) return;
+  const games = library?.games || [];
+  const pool = showExpansions ? games : games.filter(g => !g.is_expansion);
+
+  box.innerHTML = STATUSES.map(status => {
+    const count = pool.filter(g => hasStatus(g, status)).length;
+    const on = pickedStatuses.has(status);
+    // A status nobody in the group has is shown, disabled, rather than hidden:
+    // a row that changes shape between syncs is harder to read than a grey chip.
+    return `<button type="button" class="chip" data-status="${status}"
+      aria-pressed="${on}" ${count ? '' : 'disabled'}
+      title="${count ? `${count} matching` : 'Nobody has this status'}"
+      >${esc(STATUS_LABELS[status])}<span class="chip-n">${count}</span></button>`;
+  }).join('') + `<button type="button" class="chip clear" id="games-status-all"
+      ${pickedStatuses.size ? '' : 'disabled'}>Clear</button>`;
 }
 
 const rating = value => (value === null || value === undefined ? '—' : Number(value).toFixed(1));
@@ -454,6 +478,23 @@ function ownerChips(game) {
   }).join('');
 }
 
+// A fixed-size box either way: an empty placeholder keeps the rows the same
+// height, so a library that is half unillustrated does not look ragged.
+function gameThumb(game) {
+  const src = game.thumbnail || game.image;
+  if (!src) return '<span class="thumb thumb-empty" aria-hidden="true"></span>';
+  return `<img class="thumb" src="${esc(src)}" alt="" loading="lazy" decoding="async">`;
+}
+
+// Only worth showing what the row does not already say. Owned is the usual
+// case and has its own column; the rest are why the chips exist.
+function statusPills(game) {
+  return STATUSES
+    .filter(status => status !== 'own' && hasStatus(game, status))
+    .map(status => `<span class="pill status-${status}">${esc(STATUS_LABELS[status])}</span>`)
+    .join('');
+}
+
 function renderGames() {
   const list = $('#game-rows');
   // The library loads on its own schedule, so it can arrive before the first
@@ -466,13 +507,31 @@ function renderGames() {
 
   const syncing = library?.sync?.status === 'running';
   const bggReady = Boolean(state?.settings?.bggAppTokenSet);
-  $('#games-sync').disabled = syncing;
-  $('#games-sync').textContent = syncing && library?.sync?.source !== 'bgg' ? 'Syncing…' : 'Sync now';
-  $('#games-sync-bgg').disabled = syncing || !bggReady;
-  $('#games-sync-bgg').textContent = syncing && library?.sync?.source === 'bgg' ? 'Syncing…' : 'Sync from BGG';
-  $('#games-sync-bgg').title = bggReady
-    ? 'Pull each linked player\'s collection from boardgamegeek.com'
-    : 'Set BGG_APP_TOKEN in data/.env to enable this';
+  for (const id of ['#games-import', '#games-supplement']) {
+    const btn = $(id);
+    if (btn) btn.disabled = syncing || !$('#games-import-file')?.options.length;
+  }
+  if ($('#games-sync')) {
+    $('#games-sync').disabled = syncing;
+    $('#games-sync').textContent = syncing && library?.sync?.source === 'geekgroup'
+      ? 'Syncing…'
+      : 'Sync from Geekgroup';
+  }
+  if ($('#collection-rebuild')) $('#collection-rebuild').disabled = syncing;
+  // The same sync is offered on both tabs; whichever is on screen has to agree
+  // about whether it is running and whether the token is even set.
+  for (const id of ['#games-sync-bgg', '#collection-sync-bgg']) {
+    const btn = $(id);
+    if (!btn) continue;
+    btn.disabled = syncing || !bggReady;
+    btn.textContent = syncing && library?.sync?.source === 'bgg' ? 'Syncing…' : 'Sync from BGG';
+    btn.title = bggReady
+      ? 'Pull each linked player\'s collection from boardgamegeek.com'
+      : 'Set BGG_APP_TOKEN in data/.env to enable this';
+  }
+
+  renderStatusChips();
+  renderCollectionCard();
 
   const shown = filteredGames();
   $('#games-sub').textContent = syncing
@@ -482,8 +541,8 @@ function renderGames() {
   if (!games.length) {
     list.innerHTML = `<div class="empty">
       <h3>No games yet</h3>
-      <p>Sync from BoardGameGeek (needs BGG_APP_TOKEN and linked accounts), sync a Geekgroup capture, or import a dump.</p>
-      <button class="btn primary" data-goto="settings">Set up the collection</button>
+      <p>Pull each linked player's collection from BoardGameGeek, then optionally fill the gaps from Geekgroup.</p>
+      <button class="btn primary" data-goto="settings" data-goto-card="collection-card">Set up the collection</button>
     </div>`;
     return;
   }
@@ -497,7 +556,9 @@ function renderGames() {
       : 'Expansions are hidden, but a match on an expansion still shows its base game.';
     list.innerHTML = `<div class="empty">
       <h3>${heading}</h3>
-      <p>${hint}${ownedOnly ? ' Currently owned titles only.' : ''}</p>
+      <p>${hint}${pickedStatuses.size
+        ? ` Showing only: ${[...pickedStatuses].map(k => STATUS_LABELS[k]).join(', ')}.`
+        : ''}</p>
     </div>`;
     return;
   }
@@ -510,11 +571,15 @@ function renderGames() {
     <div class="row" data-id="${g.id}">
       <div class="cell">
         <span class="cell-label">Name</span>
-        <div class="cell-body">
+        <div class="cell-body name-body">
+          ${gameThumb(g)}
+          <div class="name-text">
           <a href="https://boardgamegeek.com/boardgame/${g.id}" target="_blank" rel="noreferrer noopener">${esc(g.name)}</a>
           ${g.published ? `<span class="muted"> ${g.published}</span>` : ''}
           ${g.is_expansion ? '<span class="pill">Expansion</span>' : ''}
           ${g.expansions.length ? `<span class="pill" title="${esc(g.expansions.map(e => e.name).join(', '))}">+${g.expansions.length}</span>` : ''}
+          ${statusPills(g)}
+          </div>
         </div>
       </div>
       <div class="cell">
@@ -542,7 +607,33 @@ function renderGames() {
     </div>`).join('');
 }
 
-const SOURCE_LABEL = { csv: 'imported from CSV', import: 'imported', geekgroup: 'synced', bgg: 'synced from BGG' };
+// The Settings card states where each step stands, so nobody has to go back to
+// the Games tab to find out whether step one has ever happened.
+function renderCollectionCard() {
+  if (!$('#collection-card') || !state) return;
+  const meta = library?.meta;
+  const linked = state.players.filter(p => p.bgg_username && Number(p.bgg_user_id) > 0).length;
+  const tokenSet = Boolean(state.settings?.bggAppTokenSet);
+
+  $('#collection-sub').textContent = meta?.synced_at
+    ? describeLibrary(meta, meta.game_count, meta.game_count)
+    : 'Nothing synced yet';
+
+  const missing = [];
+  if (!tokenSet) missing.push('BGG_APP_TOKEN is not set in data/.env');
+  if (!linked) missing.push('no players are linked to a BGG account yet');
+  const bits = [];
+  if (missing.length) bits.push(`Not ready: ${missing.join(', and ')}.`);
+  else bits.push(`Ready: will pull ${plural(linked, 'linked collection', 'linked collections')}.`);
+  if (meta?.source === 'bgg') {
+    bits.push(`${meta.image_count} of ${plural(meta.game_count, 'game has', 'games have')} box art.`);
+  } else if (meta?.game_count) {
+    bits.push('The current library did not come from BGG, so it has no box art or per-person statuses.');
+  }
+  $('#collection-bgg-hint').textContent = bits.join(' ');
+}
+
+const SOURCE_LABEL = { csv: 'imported from CSV', import: 'imported', geekgroup: 'synced from Geekgroup', bgg: 'synced from BGG' };
 
 function describeLibrary(meta, total, shown) {
   if (!meta?.synced_at) return '';
@@ -553,6 +644,9 @@ function describeLibrary(meta, total, shown) {
   const bits = [counted];
   if (meta.expansion_count) bits.push(`${meta.expansion_count} expansions`);
   bits.push(`${SOURCE_LABEL[meta.source] || 'loaded'} ${when}`);
+  if (meta.supplemented_at) {
+    bits.push(`gaps filled from Geekgroup ${prettyDate(meta.supplemented_at.slice(0, 10), true)}`);
+  }
   // A CSV has no per-person columns to fill, and the two blank columns are
   // otherwise unexplained.
   if (meta.source === 'csv') bits.push('CSV has no per-person ratings or owners');
@@ -582,8 +676,9 @@ function renderImportOptions() {
     : '<option value="">No files in data/bgg-import/</option>';
   select.disabled = !files.length;
   $('#games-import').disabled = !files.length;
+  $('#games-supplement').disabled = !files.length || !(library?.games || []).length;
   $('#games-import-hint').textContent = files.length
-    ? `${files.length === 1 ? '1 file' : files.length + ' files'} ready to import.`
+    ? `${files.length === 1 ? '1 file' : files.length + ' files'} ready.`
     : 'No files in data/bgg-import/ yet.';
 }
 
@@ -944,6 +1039,26 @@ function showTab(name) {
   $$('main > section').forEach(s => { s.hidden = s.id !== `tab-${name}`; });
 }
 
+// Land on one card inside a tab. The tab has only just been un-hidden, so wait a
+// frame for it to have a layout to scroll to; the brief highlight is what tells
+// you which of several cards you were sent to.
+function focusCard(id) {
+  const card = document.getElementById(id);
+  if (!card) return;
+  requestAnimationFrame(() => {
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.setAttribute('tabindex', '-1');
+    card.focus({ preventScroll: true });
+    card.classList.remove('flash');
+    void card.offsetWidth; // restart the animation if it is sent here twice
+    card.classList.add('flash');
+    // A timer rather than animationend: with reduced motion there is no
+    // animation to end, and the highlight would otherwise never clear.
+    clearTimeout(focusCard._timer);
+    focusCard._timer = setTimeout(() => card.classList.remove('flash'), 1600);
+  });
+}
+
 // ---------------------------------------------------------------- wiring
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -963,10 +1078,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Any button anywhere can send you to a tab.
   document.addEventListener('click', ev => {
-    const to = ev.target.closest('[data-goto]')?.dataset.goto;
+    const link = ev.target.closest('[data-goto]');
+    const to = link?.dataset.goto;
     if (!to) return;
     showTab(to);
-    $(`#tab-${to}`).focus();
+    if (link.dataset.gotoCard) focusCard(link.dataset.gotoCard);
+    else $(`#tab-${to}`).focus();
   });
 
   $('#refresh').onclick = () => refresh().then(() => toast('Reloaded'));
@@ -1123,27 +1240,33 @@ document.addEventListener('DOMContentLoaded', () => {
     showExpansions = ev.target.checked;
     renderGames();
   };
-  $('#games-owned').onchange = ev => {
-    ownedOnly = ev.target.checked;
+  // Delegated: the chips are re-rendered on every sync and every filter change,
+  // so binding them individually would mean rebinding them just as often.
+  $('#games-statuses').onclick = ev => {
+    const chip = ev.target.closest('.chip');
+    if (!chip || chip.disabled) return;
+    if (chip.id === 'games-status-all') pickedStatuses.clear();
+    else if (!pickedStatuses.delete(chip.dataset.status)) pickedStatuses.add(chip.dataset.status);
     renderGames();
   };
-  $('#games-sync').onclick = async () => {
+  const startSync = async (body) => {
     try {
-      library.sync = await api('games/sync', { method: 'POST' });
+      library.sync = await api('games/sync', { method: 'POST', body });
       renderGames();
       watchSync();
     } catch (err) {
       toast(err.message, true);
     }
   };
-  $('#games-sync-bgg').onclick = async () => {
-    try {
-      library.sync = await api('games/sync', { method: 'POST', body: { source: 'bgg' } });
-      renderGames();
-      watchSync();
-    } catch (err) {
-      toast(err.message, true);
-    }
+  if ($('#games-sync')) $('#games-sync').onclick = () => startSync(undefined);
+  for (const id of ['#games-sync-bgg', '#collection-sync-bgg']) {
+    if ($(id)) $(id).onclick = () => startSync({ source: 'bgg' });
+  }
+  // The Games tab sends you to the card rather than carrying the whole process
+  // in a header button: the explanation is the point, not the button.
+  $('#games-update').onclick = () => {
+    showTab('settings');
+    focusCard('collection-card');
   };
   $('#games-upload-btn').onclick = () => $('#games-upload').click();
   $('#games-upload').onchange = async () => {
@@ -1163,26 +1286,36 @@ document.addEventListener('DOMContentLoaded', () => {
       library.imports = data.imports;
       renderImportOptions();
       $('#games-import-file').value = data.file;
-      toast(`Saved ${data.file} — press Import to load it`);
+      toast(`Saved ${data.file} — Supplement or Replace library to load it`);
     } catch (err) {
       toast(err.message, true);
     } finally {
       document.body.classList.remove('busy');
     }
   };
-  $('#games-import').onclick = async () => {
+  const importFile = async (mode) => {
     const file = $('#games-import-file').value;
     if (!file) return;
+    // Replace throws away artwork and per-person statuses a BGG sync brought
+    // in. Worth one question, and only when there is something to lose.
+    if (mode === 'replace' && library?.meta?.image_count
+      && !confirm(`Replace the library with ${file}? This discards box art and statuses from the last BGG sync. Supplement keeps them.`)) {
+      return;
+    }
     try {
-      await api('games/import', { method: 'POST', body: { file } });
+      await api('games/import', { method: 'POST', body: { file, mode } });
       await loadLibrary();
       refresh();
-      toast('Collection imported');
+      toast(mode === 'supplement'
+        ? `Filled in ${plural(library?.meta?.supplemented_count || 0, 'game', 'games')} from ${file}`
+        : 'Collection replaced');
     } catch (err) {
       toast(err.message, true);
     }
   };
-  $('#games-rebuild').onclick = async () => {
+  $('#games-supplement').onclick = () => importFile('supplement');
+  $('#games-import').onclick = () => importFile('replace');
+  $('#collection-rebuild').onclick = async () => {
     try {
       await api('games/rebuild', { method: 'POST' });
       await loadLibrary();

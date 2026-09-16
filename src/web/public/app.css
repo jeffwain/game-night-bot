@@ -291,6 +291,28 @@ section[hidden] { display: none; }
 .rows.games .row > .cell:nth-child(3) .cell-body,
 .rows.games .row > .cell:nth-child(4) .cell-body { font-variant-numeric: tabular-nums; }
 
+/* Box art sits in the Name cell rather than its own column: it identifies the
+   row, it is not data to compare. Fixed box, so a missing image costs nothing
+   in alignment. BGG thumbnails are ~200x150 of varying aspect; contain keeps
+   the whole box visible instead of cropping the title off it. */
+.name-body {
+  display: flex;
+  align-items: center;
+  gap: .65rem;
+}
+.name-text { min-width: 0; }
+.name-text .pill { margin-left: .2rem; }
+.thumb {
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--r-sm);
+  object-fit: contain;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.thumb-empty { display: inline-block; }
+
 .owners { display: flex; flex-wrap: wrap; gap: .25rem .4rem; }
 .owner {
   display: inline-flex;
@@ -439,6 +461,42 @@ fieldset legend {
 
 /* ----------------------------------------------------------------- chips */
 
+/* Status filter: toggle buttons, not checkboxes. Ten checkboxes read as a form
+   to fill in; a row of pressed/unpressed chips reads as a filter you are
+   already looking through. */
+.status-filter { gap: .4rem; padding-top: .45rem; padding-bottom: .55rem; }
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font: inherit;
+  font-size: .8rem;
+  font-weight: 540;
+  padding: .2rem .6rem;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.chip:hover:not(:disabled) { border-color: var(--accent); color: var(--ink); }
+.chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.chip:disabled { opacity: .45; cursor: default; }
+.chip-n {
+  font-size: .72rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-dim);
+}
+.chip[aria-pressed="true"] .chip-n { color: inherit; opacity: .8; }
+.chip.clear { border-style: dashed; background: transparent; }
+.chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+
 .pill {
   display: inline-block;
   font-size: .74rem;
@@ -451,6 +509,12 @@ fieldset legend {
   white-space: nowrap;
 }
 .pill.played { color: var(--going); border-color: color-mix(in srgb, var(--going) 45%, transparent); }
+.pill.status-prev_owned { color: var(--ink-dim); border-style: dashed; }
+.pill.status-wishlist,
+.pill.status-want_to_buy,
+.pill.status-preordered { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.pill.status-want_to_play { color: var(--going); border-color: color-mix(in srgb, var(--going) 45%, transparent); }
+.pill.status-for_trade { color: var(--tentative); border-color: color-mix(in srgb, var(--tentative) 45%, transparent); }
 .pill.calledoff { color: var(--out); border-color: color-mix(in srgb, var(--out) 45%, transparent); }
 .pill.attention {
   color: var(--warn-ink);
@@ -666,4 +730,47 @@ body.busy main { opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: .01ms !important; animation-duration: .01ms !important; }
   .btn:active:not(:disabled) { transform: none; }
+}
+
+/* ------------------------------------------------------ collection steps */
+
+/* The Update collection card is a procedure, so it reads like one: numbered
+   steps divided by a rule, each carrying its own buttons next to the words
+   explaining them. */
+.step { padding: 1rem 0 .25rem; border-top: 1px solid var(--line); }
+.step:first-of-type { margin-top: .75rem; }
+.step h3 {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin: 0 0 .4rem;
+  font-size: .95rem;
+}
+.step-n {
+  display: inline-grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .78rem;
+  font-weight: 700;
+}
+.step .form-row { margin: .6rem 0; }
+
+/* Arriving from the Games tab's Update collection button. */
+.card.flash { animation: card-flash 1.6s ease-out; }
+.card:focus { outline: none; }
+@keyframes card-flash {
+  0%, 30% { box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+  100% { box-shadow: var(--shadow); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .card.flash { animation: none; box-shadow: 0 0 0 3px var(--accent), var(--shadow); }
+}
+
+@media (max-width: 760px) {
+  .rows.games .name-body { align-items: flex-start; }
+  .status-filter { overflow-x: auto; flex-wrap: nowrap; }
 }

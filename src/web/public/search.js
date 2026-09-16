@@ -69,6 +69,43 @@ function keepOwned(game) {
   return (game.expansions || []).some(isOwned);
 }
 
+// Every status a synced collection can carry, in the order the Games tab
+// offers them: the ones people actually filter by first.
+export const STATUSES = [
+  'own', 'prev_owned', 'want_to_play', 'wishlist', 'want_to_buy',
+  'want', 'for_trade', 'preordered', 'has_parts', 'want_parts'
+];
+
+export const STATUS_LABELS = {
+  own: 'Owned',
+  prev_owned: 'Previously owned',
+  want_to_play: 'Want to play',
+  wishlist: 'Wishlist',
+  want_to_buy: 'Want to buy',
+  want: 'Want in trade',
+  for_trade: 'For trade',
+  preordered: 'Preordered',
+  has_parts: 'Has parts',
+  want_parts: 'Wants parts'
+};
+
+// One status on one game. `own` is the only one a CSV can express without
+// naming anybody, so it is the only one that may fall back to owner_count --
+// a count of owners says nothing about who wishlisted it.
+export function hasStatus(game, status) {
+  if (!game) return false;
+  if (status === 'own') return isOwned(game);
+  return (game.status?.[status] || []).length > 0;
+}
+
+function keepStatuses(game, statuses) {
+  const matches = g => statuses.some(status => hasStatus(g, status));
+  if (matches(game)) return true;
+  // Same rule owned-only has: a base game stays when an expansion of it
+  // qualifies, so hiding expansions never hides the copy on the shelf.
+  return (game.expansions || []).some(matches);
+}
+
 /**
  * Best score for one game, and which expansion earned it if an expansion did.
  * @returns {{score: number, matchedExpansion: string|null}}
@@ -106,13 +143,20 @@ export function scoreGame(game, needle) {
  * @param {boolean}  [ownedOnly] when true, drop titles nobody currently owns.
  *                   A base game kept because an expansion is owned still
  *                   counts -- hiding expansions must not hide that copy.
+ * @param {string[]} [statuses] keep only games carrying one of these collection
+ *                   statuses. Empty (the default) filters nothing -- an empty
+ *                   chip row means "no filter", not "no games". Independent of
+ *                   ownedOnly: both apply, so the Discord command keeps its
+ *                   single owned/not question while the panel filters freely.
  * @returns {{game: object, score: number, matchedExpansion: string|null}[]}
  */
-export function searchGames(games, query, { includeExpansions = true, ownedOnly = false } = {}) {
+export function searchGames(games, query, { includeExpansions = true, ownedOnly = false, statuses = [] } = {}) {
   let pool = includeExpansions
     ? (games || [])
     : (games || []).filter(game => !game.is_expansion);
   if (ownedOnly) pool = pool.filter(keepOwned);
+  const picked = (statuses || []).filter(s => STATUSES.includes(s));
+  if (picked.length) pool = pool.filter(game => keepStatuses(game, picked));
 
   const needle = foldText(query);
   if (!needle) {

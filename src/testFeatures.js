@@ -375,7 +375,8 @@ const lib = [
     rating: { average: 8.4, group_average: 8.4, bgg_average: 8.3 },
     plays: { last_play: '2020-08-01', total_plays: 12 } },
   { id: 2, name: 'Catan', original_name: 'Die Siedler von Catan', published: 1995, is_expansion: false,
-    status: { own: [] }, owner_count: 0, expansions: [{ id: 8, name: 'Catan: Seafarers' }],
+    status: { own: [], prev_owned: [501], wishlist: [502] }, owner_count: 0,
+    expansions: [{ id: 8, name: 'Catan: Seafarers' }],
     rating: { average: null, group_average: null, bgg_average: 7.1 },
     plays: { last_play: null, total_plays: 0 } },
   { id: 3, name: 'Catan: Cities & Knights', original_name: 'Catan: Cities & Knights', published: 1998,
@@ -548,6 +549,69 @@ assert.equal(searchGames(lib, '').length, 3, 'a blank query returns everything')
 assert.equal(foldText('Pok\u00e9mon Caf\u00e9'), 'pokemon cafe', 'diacritics fold');
 assert.ok(scoreGame(lib[0], 'terraforming').score > scoreGame(lib[0], 'mars').score,
   'a prefix beats a mid-word hit');
+
+// ---------- status filtering ----------
+// The Games tab filters on any of the ten collection statuses; the Discord
+// command still asks the single owned/not question. Both go through here, so
+// the two options have to coexist without either quietly winning.
+assert.deepEqual(
+  searchGames(lib, '', { statuses: ['own'] }).map(h => h.game.id),
+  [3, 1],
+  'selecting only Owned matches what owned-only has always returned'
+);
+assert.deepEqual(
+  searchGames(lib, '', { statuses: ['prev_owned'] }).map(h => h.game.id),
+  [2],
+  'a previously-owned game is reachable, and it is not an owned one'
+);
+assert.deepEqual(
+  searchGames(lib, '', { statuses: ['own', 'wishlist'] }).map(h => h.game.id),
+  [2, 3, 1],
+  'several statuses union rather than intersect'
+);
+assert.deepEqual(
+  searchGames(lib, '', { statuses: [] }).map(h => h.game.id).sort(),
+  [1, 2, 3],
+  'selecting no status filters nothing out -- an empty chip row is not an empty library'
+);
+assert.deepEqual(
+  searchGames(lib, '', { statuses: ['for_trade'] }).map(h => h.game.id),
+  [],
+  'a status nobody has selected matches nothing'
+);
+
+// A CSV import counts owners without naming them, so own[] is empty while
+// owner_count is not. Owned has to keep meaning "we have it" there too.
+const counted = [{ ...lib[1], status: { own: [] }, owner_count: 4 }];
+assert.deepEqual(
+  searchGames(counted, '', { statuses: ['own'] }).map(h => h.game.id),
+  [2],
+  'an unnamed owner count still counts as owned'
+);
+assert.deepEqual(
+  searchGames(counted, '', { statuses: ['wishlist'] }).map(h => h.game.id),
+  [],
+  'but that count says nothing about any other status'
+);
+
+// The rule owned-only already had: a base game kept because an expansion
+// qualifies, so hiding expansions cannot hide the copy on the shelf.
+const viaExpansionStatus = searchGames(
+  [{ ...lib[1], status: { own: [] }, owner_count: 0,
+     expansions: [{ id: 8, name: 'Catan: Seafarers', status: { own: [501] }, owner_count: 1 }] }],
+  '',
+  { includeExpansions: false, statuses: ['own'] }
+);
+assert.deepEqual(viaExpansionStatus.map(h => h.game.id), [2],
+  'an owned expansion keeps its base game in a status-filtered list');
+
+// Both options at once: the narrower answer wins, not the later one.
+assert.deepEqual(
+  searchGames(lib, '', { ownedOnly: true, statuses: ['prev_owned'] }).map(h => h.game.id),
+  [],
+  'ownedOnly and statuses both apply -- neither overrides the other'
+);
+ok('the Games tab can filter on any collection status without disturbing /games');
 ok('the shared scorer hides expansions by default and still finds a base game through one');
 
 // The command reads the library off disk like everything else does.

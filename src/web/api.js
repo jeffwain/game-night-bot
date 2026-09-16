@@ -470,11 +470,21 @@ async function dispatch({ method, segments, body, deps }) {
       }
     }
 
+    // mode 'supplement' fills the current library's gaps from the dump;
+    // 'replace' (the default) makes the dump the library.
     if (method === 'POST' && rest[0] === 'import' && rest.length === 1) {
       const file = String(body.file ?? '').trim();
+      const mode = String(body.mode ?? 'replace');
       if (!file) throw badRequest('An import filename is required.');
+      if (mode !== 'replace' && mode !== 'supplement') {
+        throw badRequest('Import mode must be "replace" or "supplement".');
+      }
       if (sync.isSyncing()) throw badRequest('A sync is already running.');
-      sync.importFromFile(file);
+      try {
+        sync.importFromFile(file, { mode });
+      } catch (err) {
+        throw badRequest(err.message);
+      }
       return { meta: library.getGamesMeta(), sync: sync.getSyncStatus() };
     }
 
