@@ -118,18 +118,22 @@
         <h2>Games</h2>
         <span class="sub" id="games-sub"></span>
         <span class="spacer"></span>
-        <input id="games-search" type="search" placeholder="Search games…"
-               aria-label="Search games by name" autocomplete="off">
         <button class="btn sm" id="games-sync">Sync now</button>
         <button class="btn sm" id="games-sync-bgg">Sync from BGG</button>
       </header>
+      <div class="games-tools">
+        <input id="games-search" type="search" placeholder="Search games…"
+               aria-label="Search games by name" autocomplete="off">
+        <label><input type="checkbox" id="games-expansions"> Show expansions</label>
+        <label><input type="checkbox" id="games-owned" checked> Owned only</label>
+      </div>
       <div class="rows games" id="game-rows"></div>
     </div>
 
     <div class="card">
       <header>
         <h2>Import a dump</h2>
-        <span class="sub">For a collection saved to data/bgg-import/</span>
+        <span class="sub">Geekgroup JSON or CSV</span>
       </header>
       <div class="body">
         <div class="form-row">
@@ -138,10 +142,27 @@
             <select id="games-import-file"></select>
           </div>
           <div class="actions">
+            <input type="file" id="games-upload" accept=".json,.csv" hidden
+                   aria-label="Upload a Geekgroup dump">
+            <button type="button" class="btn quiet" id="games-upload-btn">Upload</button>
             <button class="btn" id="games-import">Import</button>
             <button class="btn quiet" id="games-rebuild">Rebuild</button>
           </div>
         </div>
+        <p class="hint">
+          On
+          <a href="https://geekgroup.app" target="_blank" rel="noreferrer noopener">geekgroup.app</a>,
+          open the collection with the network tab recording, save the
+          <code>collection.json</code> response (one page, or an array of pages),
+          or download the group's CSV export. <strong>Upload</strong> it here,
+          or copy it into <code>data/bgg-import/</code> on the host. CSV has
+          no per-person owners or ratings.
+        </p>
+        <p class="hint">
+          <strong>Rebuild</strong> ignores that file. It re-parses the latest
+          run in <code>data/bgg-raw/</code> from <strong>Sync from BGG</strong>
+          or a Geekgroup curl sync, without fetching again.
+        </p>
         <p class="hint" id="games-import-hint"></p>
       </div>
     </div>

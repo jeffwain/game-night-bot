@@ -19,26 +19,44 @@ import * as db from './database.js';
 import * as library from './games.js';
 import { cid } from './customId.js';
 import { formatDateBeautiful } from './format.js';
-import { attendeesForPlay, findPlayable, playPayload, searchPlayables } from './plays.js';
+import { attendeesForPlay, findPlayable, parsePlayQuantity, playPayload, searchPlayables } from './plays.js';
 import { logPlays } from './bgg/plays.js';
 
+function formatLoggedPlay(play) {
+  const quantity = Number(play?.quantity) || 1;
+  const name = play?.name;
+  if (!name) return '';
+  return quantity > 1 ? `${name} ×${quantity}` : name;
+}
+
 function pickedList(game) {
-  return (game?.logged_plays || []).map(p => p.name).filter(Boolean);
+  return (game?.logged_plays || []).map(formatLoggedPlay).filter(Boolean);
 }
 
 export function buildSearchModal(gameId) {
   return new ModalBuilder()
     .setCustomId(cid('checkin', 'query', gameId))
     .setTitle('What did you play?')
-    .addComponents(new ActionRowBuilder().addComponents(
-      new TextInputBuilder()
-        .setCustomId('query')
-        .setLabel('Game name')
-        .setPlaceholder('Terraforming Mars')
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setMaxLength(80)
-    ));
+    .addComponents(
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('query')
+          .setLabel('Game name')
+          .setPlaceholder('Terraforming Mars')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setMaxLength(80)
+      ),
+      new ActionRowBuilder().addComponents(
+        new TextInputBuilder()
+          .setCustomId('plays')
+          .setLabel('Plays')
+          .setStyle(TextInputStyle.Short)
+          .setRequired(false)
+          .setMaxLength(2)
+          .setValue('1')
+      )
+    );
 }
 
 export function buildPickerMessage(game) {
@@ -67,9 +85,9 @@ export function buildPickerMessage(game) {
   };
 }
 
-function buildMatchMessage(gameId, query, hits) {
+function buildMatchMessage(gameId, query, hits, quantity) {
   const select = new StringSelectMenuBuilder()
-    .setCustomId(cid('checkin', 'pick', gameId))
+    .setCustomId(cid('checkin', 'pick', gameId, quantity))
     .setPlaceholder('Pick a match')
     .addOptions(hits.map(h => ({
       label: h.label.slice(0, 100),
@@ -133,7 +151,8 @@ export async function finishLoggedPlays(gameId, { logPlaysFn = logPlays } = {}) 
     objectId: p.id,
     playdate: game.game_date,
     location,
-    players
+    players,
+    quantity: p.quantity
   }));
   const results = await logPlaysFn({ username, password }, payloads);
   return { game, results, skipped: null };
@@ -145,6 +164,13 @@ export async function searchCheckin(interaction, gameId) {
 
 export async function submitCheckinSearch(interaction, gameId) {
   const query = interaction.fields.getTextInputValue('query').trim();
+  let playsRaw = '1';
+  try {
+    playsRaw = interaction.fields.getTextInputValue('plays');
+  } catch {
+    // An in-flight modal from before the Plays field existed still has to work.
+  }
+  const quantity = parsePlayQuantity(playsRaw);
   const games = library.getGames();
   if (!games.length) {
     await interaction.reply({
@@ -161,12 +187,12 @@ export async function submitCheckinSearch(interaction, gameId) {
     });
     return;
   }
-  await interaction.update(buildMatchMessage(gameId, query, hits));
+  await interaction.update(buildMatchMessage(gameId, query, hits, quantity));
 }
 
-export async function pickCheckinPlay(interaction, gameId) {
+export async function pickCheckinPlay(interaction, gameId, quantity) {
   const item = findPlayable(library.getGames(), interaction.values[0]);
-  if (item) db.appendLoggedPlay(gameId, { id: item.id, name: item.name });
+  if (item) db.appendLoggedPlay(gameId, { id: item.id, name: item.name, quantity: parsePlayQuantity(quantity) });
   const game = db.getSchedule().find(s => s.id === Number(gameId));
   await interaction.editReply(buildPickerMessage(game));
 }

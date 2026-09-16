@@ -15,6 +15,8 @@ import { handleApi, buildPublicSnapshot } from './api.js';
 
 const ASSET_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'public');
 const MAX_BODY_BYTES = 256 * 1024;
+// Geekgroup dumps are a few MB; this is the upload-only cap, not the JSON one.
+const MAX_IMPORT_BYTES = 20 * 1024 * 1024;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -136,29 +138,37 @@ function sendAsset(res, name, status = 200) {
   return send(res, status, asset.type, asset.body);
 }
 
-function readBody(req) {
+function readLimitedBody(req, maxBytes) {
   return new Promise((resolve, reject) => {
     const chunks = [];
     let size = 0;
+    let tooLarge = false;
     req.on('data', chunk => {
       size += chunk.length;
-      if (size > MAX_BODY_BYTES) {
-        reject(new Error('Request body too large.'));
-        req.destroy();
+      if (tooLarge) return;
+      if (size > maxBytes) {
+        tooLarge = true;
+        chunks.length = 0;
         return;
       }
       chunks.push(chunk);
     });
     req.on('end', () => {
-      const raw = Buffer.concat(chunks).toString('utf-8');
-      if (!raw.trim()) return resolve({});
-      try {
-        resolve(JSON.parse(raw));
-      } catch {
-        reject(new Error('Request body was not valid JSON.'));
-      }
+      if (tooLarge) reject(new Error('Request body too large.'));
+      else resolve(Buffer.concat(chunks).toString('utf-8'));
     });
     req.on('error', reject);
+  });
+}
+
+function readBody(req) {
+  return readLimitedBody(req, MAX_BODY_BYTES).then(raw => {
+    if (!raw.trim()) return {};
+    try {
+      return JSON.parse(raw);
+    } catch {
+      throw new Error('Request body was not valid JSON.');
+    }
   });
 }
 
@@ -215,7 +225,14 @@ async function route(req, res, deps) {
     let body = {};
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       try {
-        body = await readBody(req);
+        if (req.method === 'POST' && pathname === '/api/games/import-upload') {
+          body = {
+            file: url.searchParams.get('file') || '',
+            text: await readLimitedBody(req, MAX_IMPORT_BYTES)
+          };
+        } else {
+          body = await readBody(req);
+        }
       } catch (err) {
         return sendJson(res, 400, { error: err.message });
       }

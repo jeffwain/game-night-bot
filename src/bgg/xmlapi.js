@@ -14,10 +14,30 @@ const BGG_ORIGIN = 'https://boardgamegeek.com';
 const DEFAULT_DELAY_MS = 5000;
 const DEFAULT_ATTEMPTS = 6;
 
-const STATUS_KEYS = [
-  'own', 'prev_owned', 'for_trade', 'want', 'want_to_play',
-  'want_to_buy', 'wishlist', 'preordered', 'has_parts', 'want_parts'
-];
+const STATUS_ATTRS = {
+  own: 'own',
+  prevowned: 'prev_owned',
+  fortrade: 'for_trade',
+  want: 'want',
+  wanttoplay: 'want_to_play',
+  wanttobuy: 'want_to_buy',
+  wishlist: 'wishlist',
+  preordered: 'preordered',
+  hasparts: 'has_parts',
+  wantparts: 'want_parts'
+};
+
+function emptyStatus() {
+  return Object.fromEntries(Object.values(STATUS_ATTRS).map(key => [key, []]));
+}
+
+function parseStatusFlags(attrs) {
+  const flags = {};
+  for (const [from, to] of Object.entries(STATUS_ATTRS)) {
+    flags[to] = attrs[from] === '1';
+  }
+  return flags;
+}
 
 export function getAppToken(env = process.env) {
   return String(env.BGG_APP_TOKEN || '').trim();
@@ -39,10 +59,11 @@ export function redact(value, token = getAppToken()) {
   return text.split(token).join('[redacted]');
 }
 
-export function collectionUrl(username, { stats = true } = {}) {
+export function collectionUrl(username, { stats = true, subtype } = {}) {
   const url = new URL(`${BGG_ORIGIN}/xmlapi2/collection`);
   url.searchParams.set('username', String(username || '').trim());
   url.searchParams.set('stats', stats ? '1' : '0');
+  if (subtype) url.searchParams.set('subtype', String(subtype));
   return url.toString();
 }
 
@@ -92,10 +113,6 @@ function numberOrNull(value) {
   return Number.isFinite(n) ? n : null;
 }
 
-function emptyStatus() {
-  return Object.fromEntries(STATUS_KEYS.map(k => [k, []]));
-}
-
 function mean(values) {
   if (!values.length) return null;
   const sum = values.reduce((a, b) => a + b, 0);
@@ -104,7 +121,7 @@ function mean(values) {
 
 /**
  * Parse a /xmlapi2/collection body into the fields we actually store.
- * Ownership is a flag here; toLibrary attaches it to a BGG user id.
+ * Each status flag is a boolean here; toLibrary turns it into a list of users.
  */
 export function parseCollectionXml(xml) {
   const items = [];
@@ -125,12 +142,15 @@ export function parseCollectionXml(xml) {
     const plays = firstTag(body, 'numplays');
     const subtype = String(head.subtype || head.type || '');
 
+    const flags = parseStatusFlags(status.attrs);
+
     items.push({
       id,
       name: name.attrs.value || name.text || `Game ${id}`,
       published: numberOrNull(year.attrs.value || year.text),
       is_expansion: /expansion/i.test(subtype),
-      own: status.attrs.own === '1',
+      own: flags.own,
+      status: flags,
       rating: numberOrNull(rating.attrs.value),
       bgg_average: numberOrNull(average.attrs.value || average.text),
       numplays: numberOrNull(plays.attrs.value || plays.text) || 0,
@@ -233,7 +253,10 @@ export function toLibrary(collections, players = [], { parents = new Map(), sync
         };
         games.set(item.id, game);
       }
-      if (item.own && !game.status.own.includes(userId)) game.status.own.push(userId);
+      for (const [key, on] of Object.entries(item.status || { own: item.own })) {
+        if (!on || !Array.isArray(game.status[key])) continue;
+        if (!game.status[key].includes(userId)) game.status[key].push(userId);
+      }
       if (item.rating != null) game.rating.users[userId] = item.rating;
       game.plays.users[userId] = (game.plays.users[userId] || 0) + item.numplays;
       game.plays.total_plays += item.numplays;
@@ -244,7 +267,9 @@ export function toLibrary(collections, players = [], { parents = new Map(), sync
   }
 
   for (const game of games.values()) {
-    game.status.own.sort((a, b) => a - b);
+    for (const key of Object.values(STATUS_ATTRS)) {
+      game.status[key].sort((a, b) => a - b);
+    }
     game.owner_count = game.status.own.length;
     const rated = Object.values(game.rating.users);
     game.rating.average = mean(rated);
@@ -348,6 +373,23 @@ function filePart(value) {
   return String(value || 'user').replace(/[^\w.-]+/g, '_').slice(0, 40) || 'user';
 }
 
+// BGG's default /collection dump includes expansions but labels every item
+// boardgame. Items that also appear in subtype=boardgameexpansion are
+// expansions, regardless of the subtype attribute on either document.
+export function mergeExpansionFlag(items, expansions) {
+  const expansionIds = new Set((expansions || []).map(item => item.id));
+  const merged = (items || []).map(item => (
+    expansionIds.has(item.id) ? { ...item, is_expansion: true } : item
+  ));
+  const seen = new Set(merged.map(item => item.id));
+  for (const item of expansions || []) {
+    if (seen.has(item.id)) continue;
+    merged.push({ ...item, is_expansion: true });
+    seen.add(item.id);
+  }
+  return merged;
+}
+
 function linkedPlayers(players) {
   return (players || []).filter(p => String(p?.bgg_username || '').trim() && Number(p.bgg_user_id) > 0);
 }
@@ -355,6 +397,10 @@ function linkedPlayers(players) {
 /**
  * Pull every linked player's collection, then /thing for expansions so they
  * can hang off their base game the same way a Geekgroup sync does.
+ *
+ * BGG's default collection dump includes expansions but labels every item
+ * subtype="boardgame". The expansion collection is a second request; membership
+ * there is what we trust, not the subtype attribute on the first dump.
  *
  * @returns {Promise<{library: object, xmlFiles: {name: string, text: string}[]}>}
  */
@@ -371,6 +417,7 @@ export async function fetchCollections(players, opts = {}) {
   const xmlFiles = [];
   const collections = [];
   let request = 0;
+  const collectionPages = linked.length * 2;
 
   const pause = async () => {
     if (request === 0) return;
@@ -378,19 +425,34 @@ export async function fetchCollections(players, opts = {}) {
   };
 
   for (const player of linked) {
+    const username = String(player.bgg_username).trim();
+    const userId = Number(player.bgg_user_id);
+
     await pause();
     request += 1;
-    onProgress({ page: request, pages: linked.length });
-    const username = String(player.bgg_username).trim();
+    onProgress({ page: request, pages: collectionPages });
     const xml = await fetchXml(collectionUrl(username), opts);
     xmlFiles.push({
-      name: `collection-${Number(player.bgg_user_id)}-${filePart(username)}.xml`,
+      name: `collection-${userId}-${filePart(username)}.xml`,
       text: xml
     });
+
+    await pause();
+    request += 1;
+    onProgress({ page: request, pages: collectionPages });
+    const expansionXml = await fetchXml(
+      collectionUrl(username, { subtype: 'boardgameexpansion' }),
+      opts
+    );
+    xmlFiles.push({
+      name: `expansions-${userId}-${filePart(username)}.xml`,
+      text: expansionXml
+    });
+
     collections.push({
-      userId: Number(player.bgg_user_id),
+      userId,
       username,
-      items: parseCollectionXml(xml)
+      items: mergeExpansionFlag(parseCollectionXml(xml), parseCollectionXml(expansionXml))
     });
   }
 

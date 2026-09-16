@@ -73,6 +73,13 @@ try {
   assert.match(shell, /<script type="module" src="app\.js">/, 'app.js must load as a module');
   assert.ok((await req('GET', '/')).text.includes('id="games-sync-bgg"'),
     'the Games tab offers a BGG XML API sync');
+  const gamesTab = (await req('GET', '/')).text;
+  assert.ok(gamesTab.includes('id="games-search"'), 'search is on the Games tab');
+  assert.ok(gamesTab.includes('id="games-expansions"'), 'Show expansions is a checkbox');
+  assert.ok(gamesTab.includes('id="games-owned"'), 'Owned only is a checkbox');
+  assert.match(gamesTab, /Show expansions/);
+  assert.match(gamesTab, /Owned only/);
+  assert.ok(gamesTab.includes('id="games-upload"'), 'the import card can take a file from the browser');
   assert.equal((await req('GET', '/not-an-asset.js')).status, 404, 'the asset allowlist stays closed');
   ok('the panel loads as an ES module and its shared scorer resolves');
 
@@ -478,6 +485,46 @@ try {
     assert.ok(bad.json.error.includes(needle), `${file}: ${bad.json.error}`);
   }
   ok('path traversal and unsupported extensions are refused');
+
+  // JSON API bodies stay at 256 KB so a dump cannot ride in on /import. The
+  // upload route reads the file as a raw body with a higher cap instead.
+  const bloated = await req('PATCH', '/api/settings', { displayName: 'x'.repeat(300 * 1024) });
+  assert.equal(bloated.status, 400, 'other endpoints keep the small JSON cap');
+  assert.match(bloated.json.error, /too large/i);
+
+  async function upload(name, body) {
+    const res = await fetch(`${BASE}/api/games/import-upload?file=${encodeURIComponent(name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body
+    });
+    const text = await res.text();
+    let json = null;
+    try { json = JSON.parse(text); } catch { /* */ }
+    return { status: res.status, json };
+  }
+
+  const uploaded = await upload('from-panel.json', '{"pages":1,"collection":[]}');
+  assert.equal(uploaded.status, 200, uploaded.json?.error);
+  assert.equal(uploaded.json.file, 'from-panel.json');
+  assert.ok(uploaded.json.imports.includes('from-panel.json'));
+  assert.equal(fs.readFileSync(`${importDir}/from-panel.json`, 'utf-8'), '{"pages":1,"collection":[]}');
+
+  const fat = await upload('fat.json', `{"collection":[]}${ ' '.repeat(300 * 1024)}`);
+  assert.equal(fat.status, 200, 'a dump larger than the JSON cap still lands');
+  assert.ok(fs.statSync(`${importDir}/fat.json`).size > 300 * 1024);
+
+  for (const [file, needle] of [
+    ['../db.json', 'must be a .json or .csv'],
+    ['notes.txt', 'must be a .json or .csv'],
+    ['', 'filename is required']
+  ]) {
+    const bad = await upload(file, '{"collection":[]}');
+    assert.equal(bad.status, 400, `${file || '(empty)'} should be refused`);
+    assert.ok(bad.json.error.includes(needle), `${file || '(empty)'}: ${bad.json.error}`);
+  }
+  assert.equal((await upload('empty.json', '')).status, 400, 'an empty upload is refused');
+  ok('a dump can be uploaded into bgg-import from the panel');
 
   assert.equal((await req('POST', '/api/games/import', { file: 'dump.json' })).status, 200);
   lib = (await req('GET', '/api/games')).json;

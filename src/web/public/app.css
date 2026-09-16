@@ -218,17 +218,34 @@ section[hidden] { display: none; }
   font-size: .82rem;
 }
 .card > header .spacer { flex: 1 1 auto; }
-/* Search sits in the card header rather than above the list: it belongs to
-   these rows, and the header already had the room. */
-.card > header input[type="search"] {
-  flex: 0 1 16rem;
-  min-width: 9rem;
-  align-self: center;
-}
 .card > header .btn { align-self: center; }
 .card > .body { padding: 1rem; }
 .card > .body > :first-child { margin-top: 0; }
 .card > .body > :last-child { margin-bottom: 0; }
+
+/* Search + filters sit on the list, not in the title row: the two checkboxes
+   have to stay visible, and the header already has the sync buttons. */
+.games-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .55rem .9rem;
+  padding: .55rem 1rem;
+  border-bottom: 1px solid var(--line);
+}
+.games-tools input[type="search"] {
+  flex: 1 1 14rem;
+  min-width: 10rem;
+}
+.games-tools label {
+  display: inline-flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: .85rem;
+  color: var(--ink-2);
+  white-space: nowrap;
+  cursor: pointer;
+}
 
 /* ------------------------------------------------------------------ rows */
 

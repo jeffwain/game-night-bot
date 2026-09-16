@@ -41,6 +41,23 @@ const COLLECTION = `<?xml version="1.0" encoding="utf-8"?>
   </item>
 </items>`;
 
+// What BGG actually sends for /collection with no subtype: expansions are in
+// the dump, but every item is subtype="boardgame". The expansion collection
+// is a second request; that is the only signal we get.
+const COLLECTION_FLAT = COLLECTION.replace('subtype="boardgameexpansion"', 'subtype="boardgame"');
+const EXPANSIONS = `<?xml version="1.0" encoding="utf-8"?>
+<items totalitems="1">
+  <item objecttype="thing" objectid="325" subtype="boardgame" collid="2">
+    <name>Catan: Seafarers</name>
+    <yearpublished>1997</yearpublished>
+    <stats minplayers="3" maxplayers="4">
+      <rating value="N/A"><average value="7.0"/></rating>
+    </stats>
+    <status own="1" prevowned="0" fortrade="0" want="0" wanttoplay="0" wanttobuy="0" wishlist="0" preordered="0"/>
+    <numplays>0</numplays>
+  </item>
+</items>`;
+
 const THING = `<?xml version="1.0" encoding="utf-8"?>
 <items>
   <item type="boardgameexpansion" id="325">
@@ -75,6 +92,12 @@ try {
   assert.match(url, /username=Ada\+Lovelace/, 'usernames are encoded');
   assert.match(url, /stats=1/);
   ok('collection URLs hit boardgamegeek.com, not www');
+  assert.doesNotMatch(xmlapi.collectionUrl('ada'), /subtype=/);
+  assert.match(
+    xmlapi.collectionUrl('ada', { subtype: 'boardgameexpansion' }),
+    /subtype=boardgameexpansion/
+  );
+  ok('the expansion collection is a second request, not a guess from the name');
 
   const items = xmlapi.parseCollectionXml(COLLECTION);
   assert.equal(items.length, 2);
@@ -91,6 +114,40 @@ try {
   assert.equal(items[1].is_expansion, true);
   assert.equal(items[1].rating, null, 'N/A is not a rating');
   ok('collection XML becomes the fields the library already stores');
+
+  const WISH = `<?xml version="1.0" encoding="utf-8"?>
+<items totalitems="1">
+  <item objecttype="thing" objectid="421" subtype="boardgame" collid="3">
+    <name>1830: Railways &amp; Robber Barons</name>
+    <yearpublished>1986</yearpublished>
+    <stats minplayers="2" maxplayers="6">
+      <rating value="N/A"><average value="7.8"/></rating>
+    </stats>
+    <status own="0" prevowned="1" fortrade="0" want="0" wanttoplay="1" wanttobuy="0" wishlist="1" wishlistpriority="2" preordered="0"/>
+    <numplays>0</numplays>
+  </item>
+</items>`;
+  const wish = xmlapi.parseCollectionXml(WISH)[0];
+  assert.equal(wish.own, false);
+  assert.equal(wish.status.own, false);
+  assert.equal(wish.status.prev_owned, true);
+  assert.equal(wish.status.want_to_play, true);
+  assert.equal(wish.status.wishlist, true);
+  const wished = xmlapi.toLibrary(
+    [{ userId: 501, username: 'ada', items: [wish] }],
+    [{ bgg_user_id: 501, bgg_username: 'ada', name: 'Ada' }],
+    { syncedAt: new Date('2026-09-14T12:00:00Z') }
+  ).games[0];
+  assert.deepEqual(wished.status.own, []);
+  assert.deepEqual(wished.status.prev_owned, [501]);
+  assert.deepEqual(wished.status.want_to_play, [501]);
+  assert.deepEqual(wished.status.wishlist, [501]);
+  assert.equal(wished.owner_count, 0);
+  assert.doesNotMatch(
+    xmlapi.collectionUrl('ada', { subtype: 'boardgameexpansion' }),
+    /own=/
+  );
+  ok('wishlist, previously owned, and want-to-play flags survive into the library');
 
   const parents = xmlapi.parseThingParents(THING);
   assert.equal(parents.get(325), 13, 'an expansion points at its base game');
@@ -172,6 +229,9 @@ try {
   const fetchAll = async (url, init) => {
     seen.push(url);
     assert.equal(init.headers.Authorization, `Bearer ${TOKEN}`);
+    if (url.includes('/collection') && url.includes('subtype=boardgameexpansion')) {
+      return { ok: true, status: 200, text: async () => EXPANSIONS };
+    }
     if (url.includes('/collection')) return { ok: true, status: 200, text: async () => COLLECTION };
     if (url.includes('/thing')) return { ok: true, status: 200, text: async () => THING };
     throw new Error(`unexpected ${url}`);
@@ -191,6 +251,32 @@ try {
   assert.equal(pulled.library.games.find(g => g.id === 13).expansions[0].id, 325);
   assert.ok(pulled.xmlFiles.some(f => f.name.startsWith('collection-') && f.text.includes('Catan')));
   ok('a linked username is fetched, archived as XML, and folded via /thing');
+
+  const flatSeen = [];
+  const fetchFlat = async (url, init) => {
+    flatSeen.push(url);
+    assert.equal(init.headers.Authorization, `Bearer ${TOKEN}`);
+    if (url.includes('/collection') && url.includes('subtype=boardgameexpansion')) {
+      return { ok: true, status: 200, text: async () => EXPANSIONS };
+    }
+    if (url.includes('/collection')) {
+      return { ok: true, status: 200, text: async () => COLLECTION_FLAT };
+    }
+    if (url.includes('/thing')) return { ok: true, status: 200, text: async () => THING };
+    throw new Error(`unexpected ${url}`);
+  };
+  const folded = await xmlapi.fetchCollections(linked, {
+    fetchImpl: fetchFlat,
+    delayMs: 0,
+    sleep: async () => {}
+  });
+  assert.ok(flatSeen.some(u => u.includes('subtype=boardgameexpansion')),
+    'expansions are a second collection request; the main dump does not name them');
+  const foldedCatan = folded.library.games.find(g => g.id === 13);
+  assert.equal(foldedCatan.expansions[0]?.id, 325, 'Seafarers hangs off Catan even when the main dump hid the subtype');
+  assert.equal(folded.library.games.find(g => g.id === 325), undefined, 'the expansion is not also a top-level row');
+  assert.ok(folded.xmlFiles.some(f => f.name.startsWith('expansions-') && f.text.includes('Seafarers')));
+  ok('a collection that labels every item boardgame still nests expansions');
 
   const userXml = `<?xml version="1.0"?><user id="501" name="ada" termsofuse="https://boardgamegeek.com/xmlapi/termsofuse"><firstname value="Ada"/></user>`;
   assert.deepEqual(xmlapi.parseUserXml(userXml), { id: 501, username: 'ada' });

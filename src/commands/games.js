@@ -50,7 +50,7 @@ function describe(game, matchedExpansion, users, players) {
     `Owned by ${ownerNames(game, users, players)}`,
     game.plays.last_play
       ? `Last played ${playDate(game.plays.last_play)}` +
-        (game.plays.total_plays ? ` · ${game.plays.total_plays} plays` : '')
+      (game.plays.total_plays ? ` · ${game.plays.total_plays} plays` : '')
       : 'Never played'
   ];
   // Say why a game surfaced when the query never appeared in its own name.
@@ -70,6 +70,7 @@ export async function cmdGames(interaction) {
   // Expansions are off unless asked for: most of the time "do we own X" means
   // the base game, and a third of the library is expansions.
   const includeExpansions = interaction.options.getBoolean('expansions') ?? false;
+  const ownedOnly = interaction.options.getBoolean('owned') ?? true;
 
   const games = library.getGames();
   const embed = new EmbedBuilder().setColor(0x34495E).setTimestamp();
@@ -84,15 +85,18 @@ export async function cmdGames(interaction) {
     return interaction.reply({ embeds: [embed] });
   }
 
-  const hits = searchGames(games, query, { includeExpansions });
+  const hits = searchGames(games, query, { includeExpansions, ownedOnly });
 
   if (!hits.length) {
     embed
       .setTitle(`Nothing matching "${query}"`)
       .setDescription(
-        includeExpansions
-          ? 'Expansion names are searched too, and a hit on one shows its base game.'
-          : 'Expansions are hidden — add `expansions: True` to search those as well.'
+        [
+          includeExpansions
+            ? 'Expansion names are searched too, and matches will also show the base game.'
+            : 'Expansions are hidden, but base games will still show if the expansion is for it.',
+          ownedOnly ? 'Only currently owned titles are included.' : ''
+        ].filter(Boolean).join(' ')
       );
     return interaction.reply({ embeds: [embed] });
   }
@@ -109,8 +113,9 @@ export async function cmdGames(interaction) {
     })));
 
   const notes = [];
+  if (!includeExpansions) notes.push('Expansions hidden.');
+  if (ownedOnly) notes.push('Owned only.');
   if (hits.length > shown.length) notes.push(`Showing the top ${shown.length}. Narrow the search to see the rest.`);
-  if (!includeExpansions) notes.push('Expansions hidden — use expansions: True to include them.');
   if (notes.length) embed.setFooter({ text: notes.join(' ') });
 
   return interaction.reply({ embeds: [embed] });

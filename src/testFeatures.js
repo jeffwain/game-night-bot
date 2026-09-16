@@ -89,6 +89,10 @@ assert.equal(byName.update.options.find(o => o.name === 'add')
   '/update add start_date stays optional');
 ok('/update new requires start_date; the old `mode:new` default-argument footgun is gone');
 
+const gamesOpts = byName.games.options.map(o => o.name);
+assert.deepEqual(gamesOpts, ['name', 'expansions', 'owned']);
+ok('/games can hide expansions and restrict to currently owned titles');
+
 // ---------- 4. AUTOCOMPLETE ----------
 console.log('\n4. Autocomplete');
 const acOpts = [];
@@ -385,7 +389,7 @@ const lib = [
 // plus everyone who RSVP'd "I'm in". These are the rules that payload is built
 // from; the Discord buttons and the HTTP post are wired separately.
 console.log('\nLogged plays');
-const { attendeesForPlay, searchPlayables, playPayload } = await import('./plays.js');
+const { attendeesForPlay, searchPlayables, playPayload, parsePlayQuantity } = await import('./plays.js');
 
 const group = [
   { id: 1, name: 'Alice', discord_id: '11', bgg_username: 'ada' },
@@ -412,37 +416,52 @@ assert.deepEqual(hostOut.map(p => p.name), ['Alice', 'Bob'],
   'the host is on the play even if they RSVP\'d out of their own night');
 ok('the host is always on the play');
 
-const playables = searchPlayables(lib, 'seafarers');
+assert.deepEqual(searchPlayables(lib, 'catan').map(p => p.id), [3],
+  'play search skips a title nobody currently owns');
+const ownedSeafarers = structuredClone(lib);
+ownedSeafarers[1].expansions[0].status = { own: [501] };
+ownedSeafarers[1].expansions[0].owner_count = 1;
+const playables = searchPlayables(ownedSeafarers, 'seafarers');
 assert.equal(playables.length, 1);
 assert.equal(playables[0].id, 8, 'picking an expansion logs that id, not the base game');
 assert.match(playables[0].label, /Seafarers/);
 assert.equal(searchPlayables(lib, 'zzzz').length, 0);
 assert.equal(searchPlayables(lib, '').length, 0, 'a blank search is not a dump of the library');
-ok('play search treats expansions as their own pick');
+ok('play search treats expansions as their own pick and drops unowned titles');
+
+assert.equal(parsePlayQuantity(''), 1);
+assert.equal(parsePlayQuantity('0'), 1);
+assert.equal(parsePlayQuantity('3'), 3);
+assert.equal(parsePlayQuantity('99'), 99);
+assert.equal(parsePlayQuantity('100'), 99);
+ok('play quantity is a positive integer, default 1, capped at 99');
 
 const body = playPayload({
   objectId: 13,
   playdate: '2026-09-14',
   location: 'Dice Monster',
-  players: table
+  players: table,
+  quantity: 3
 });
 assert.equal(body.action, 'save');
 assert.equal(body.objectid, 13);
 assert.equal(body.playdate, '2026-09-14');
 assert.equal(body.location, 'Dice Monster');
+assert.equal(body.quantity, 3);
 assert.deepEqual(body.players.map(p => p.username), ['ada', 'bob']);
-ok('the geekplay body names the game, the night, and the table');
+ok('the geekplay body names the game, the night, the table, and how many plays');
 
 db.appendSchedule([{ player_id: 1, game_date: '2099-03-01' }]);
 const loggedNight = db.getSchedule().find(s => s.game_date === '2099-03-01');
-db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan' });
-db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan' });
+db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan', quantity: 2 });
+db.appendLoggedPlay(loggedNight.id, { id: 13, name: 'Catan', quantity: 1 });
 db.appendLoggedPlay(loggedNight.id, { id: 8, name: 'Catan: Seafarers' });
-assert.deepEqual(
-  db.getSchedule().find(s => s.id === loggedNight.id).logged_plays.map(p => p.id),
-  [13, 8]
-);
-ok('picked games persist on the night and duplicates are ignored');
+const stored = db.getSchedule().find(s => s.id === loggedNight.id).logged_plays;
+assert.deepEqual(stored.map(p => ({ id: p.id, quantity: p.quantity })), [
+  { id: 13, quantity: 3 },
+  { id: 8, quantity: 1 }
+]);
+ok('picked games persist on the night and a second pick of the same game adds to its quantity');
 
 const { finishLoggedPlays } = await import('./checkin.js');
 db.updateSettings('displayName', 'Dice Monster');
@@ -472,7 +491,9 @@ assert.equal(posted[0].creds.username, 'jeff');
 assert.equal(posted[0].payloads.length, 2);
 assert.equal(posted[0].payloads[0].location, 'Dice Monster');
 assert.equal(posted[0].payloads[0].playdate, '2099-03-01');
-ok('finishing check-in posts each picked game with the table and the night\'s date');
+assert.equal(posted[0].payloads[0].quantity, 3, 'the stored quantity is what BGG receives');
+assert.equal(posted[0].payloads[1].quantity, 1);
+ok('finishing check-in posts each picked game with the table, the night\'s date, and its quantity');
 
 db.updateSettings('bggPassword', 'legacy-secret');
 assert.equal('bggPassword' in db.getSettings(), false, 'an old db.json password is dropped, not kept');
@@ -496,6 +517,31 @@ assert.equal(viaExpansion.length, 1, 'an expansion name surfaces its base game e
 assert.equal(viaExpansion[0].game.id, 2);
 assert.equal(viaExpansion[0].matchedExpansion, 'Catan: Seafarers', 'and the match is attributed');
 
+assert.deepEqual(
+  searchGames(lib, 'catan', { includeExpansions: false, ownedOnly: true }).map(h => h.game.id),
+  [],
+  'owned-only drops a base game nobody currently owns'
+);
+assert.deepEqual(
+  searchGames(lib, 'catan', { includeExpansions: true, ownedOnly: true }).map(h => h.game.id),
+  [3],
+  'but keeps an owned expansion row when expansions are shown'
+);
+assert.deepEqual(
+  searchGames(lib, '', { ownedOnly: true }).map(h => h.game.id),
+  [3, 1],
+  'a blank owned-only query is the currently-owned library, not everything synced'
+);
+
+const viaOwnedExpansion = searchGames(
+  [lib[0], { ...lib[1], expansions: [{ id: 8, name: 'Catan: Seafarers', status: { own: [501] }, owner_count: 1 }] }, lib[2]],
+  'seafarers',
+  { includeExpansions: false, ownedOnly: true }
+);
+assert.equal(viaOwnedExpansion.length, 1, 'an owned expansion still surfaces its base game when expansions are hidden');
+assert.equal(viaOwnedExpansion[0].game.id, 2);
+assert.equal(viaOwnedExpansion[0].matchedExpansion, 'Catan: Seafarers');
+
 assert.deepEqual(searchGames(lib, 'trmis').map(h => h.game.id), [1], 'subsequence matching survives the move');
 assert.equal(searchGames(lib, 'zzzz').length, 0, 'nonsense matches nothing');
 assert.equal(searchGames(lib, '').length, 3, 'a blank query returns everything');
@@ -513,11 +559,14 @@ fs.writeFileSync(`${DIR}/games.json`, JSON.stringify({
 }));
 
 const { cmdGames } = await import('./commands/games.js');
-function fakeGames(name, expansions) {
+function fakeGames(name, expansions, owned) {
   let captured = null;
   return {
     interaction: {
-      options: { getString: () => name, getBoolean: () => expansions },
+      options: {
+        getString: () => name,
+        getBoolean: (n) => (n === 'owned' ? owned : expansions)
+      },
       reply: (p) => { captured = p; }
     },
     get embed() { return captured.embeds[0].data; }
@@ -528,6 +577,15 @@ let g = fakeGames('terraforming', null);
 await cmdGames(g.interaction);
 assert.match(g.embed.title, /matching "terraforming"/);
 assert.match(g.embed.footer.text, /Expansions hidden/, 'the default is stated, not silent');
+assert.match(g.embed.footer.text, /Owned only/, 'so is the owned-only default');
+
+g = fakeGames('catan', null);
+await cmdGames(g.interaction);
+assert.match(g.embed.title, /^Nothing matching/, 'owned-only default hides a title nobody owns');
+
+g = fakeGames('catan', null, false);
+await cmdGames(g.interaction);
+assert.match(g.embed.title, /matching "catan"/, 'owned: false still finds an unowned title');
 
 g = fakeGames('nothing-like-this', null);
 await cmdGames(g.interaction);

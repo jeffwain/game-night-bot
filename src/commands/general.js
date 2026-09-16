@@ -40,32 +40,31 @@ export async function cmdHelp(interaction) {
       {
         name: 'Everyone',
         value: '• `/schedule` — See who is hosting and when.\n' +
-               '• `/games name: <name>` — Search what the group owns. Fuzzy, so `trmis` finds ' +
-               'Terraforming Mars. Add `expansions: True` to include expansions.\n' +
-               '• `/player list` — View the roster.\n' +
-               '• `/help` — This guide.'
+          '• `/games name: <name>` — Search the library. Owned only, expansions hidden, unless you say otherwise.\n' +
+          '• `/player list` — View the roster.\n' +
+          '• `/help` — This guide.'
       },
       {
         name: 'Roster — needs Manage Server',
         value: '• `/player add name: <name> user: <@user>` — Add a player.\n' +
-               '• `/player link name: <name> user: <@user>` — Link or unlink a Discord account.\n' +
-               '• `/player toggle name: <name>` — Active/inactive (inactive players are skipped when randomizing).\n' +
-               '• `/player remove name: <name>` — Remove a player and clear their slots.'
+          '• `/player link name: <name> user: <@user>` — Link or unlink a Discord account.\n' +
+          '• `/player toggle name: <name>` — Active/inactive (inactive players are skipped when randomizing).\n' +
+          '• `/player remove name: <name>` — Remove a player and clear their slots.'
       },
       {
         name: 'Rotation — needs Manage Server',
         value: '• `/update new start_date: <date>` — **Replaces** the pending schedule with a fresh shuffle.\n' +
-               '• `/update add` — Appends another shuffled rotation to the end.\n' +
-               '• `/update done player: <name> status: <completed|skipped>` — Mark a night.\n' +
-               '• `/update swap player1: <name> player2: <name>` — Trade two dates.\n' +
-               '• `/update edit` — Step through entries to change dates/hosts or delete.\n' +
-               '• `/update clear` — Drop all pending games (roster and history are kept).'
+          '• `/update add` — Appends another shuffled rotation to the end.\n' +
+          '• `/update done player: <name> status: <completed|skipped>` — Mark a night.\n' +
+          '• `/update swap player1: <name> player2: <name>` — Trade two dates.\n' +
+          '• `/update edit` — Step through entries to change dates/hosts or delete.\n' +
+          '• `/update clear` — Drop all pending games (roster and history are kept).'
       },
       {
         name: 'Admin — needs Administrator',
         value: '• `/admin config` — Set the announcement/notification channels, daily `reminder_time` (HH:MM), and `timezone`.\n' +
-               '• `/admin status` — Diagnostics and database status.\n' +
-               '• `/admin scan type: <checkin|reminders|claims|all>` — Run the background scanners now.'
+          '• `/admin status` — Diagnostics and database status.\n' +
+          '• `/admin scan type: <checkin|reminders|claims|all>` — Run the background scanners now.'
       },
       {
         name: '\u200b',
@@ -73,34 +72,28 @@ export async function cmdHelp(interaction) {
       },
       {
         name: 'Hosting notice — DM, 3 days before your night',
-        value: '• **Swap with…** — Pick another upcoming host and trade dates with them. ' +
-               'Only the two of you move; every other date holds.\n' +
-               '• **I\'m out** — Posts an open call in the channel asking who can take your night. ' +
-               'If someone claims it you trade dates with them. If nobody claims it by the day before, ' +
-               'the night is called off and the whole rotation slides back one week — you still host next.\n' +
-               '• **Remove me** — You leave the rotation entirely. You are marked inactive, your night is ' +
-               'deleted, and everyone after you moves *up* a week. Use `/player toggle` to come back.'
+        value: '• **Swap with…** to trade dates.\n' +
+          '• **I\'m out** to request a swap from the group. If no one swaps night is canceled and ' +
+          'and the schedule shifts.\n' +
+          '• **Remove me** to leave the rotation. Use `/player toggle` to come back.'
       },
       {
         name: 'Host needed — channel post, after someone uses “I\'m out”',
-        value: '• **I\'ll host it** — You take that night and the host who bowed out takes your next slot. ' +
-               'A straight trade: no other dates move. You have to be on the roster to claim.'
+        value: '• **I\'ll host it** to swap with your next night. ' +
+          'A straight trade: no other dates move. You have to be on the roster to claim.'
       },
       {
         name: 'RSVP post — channel, 3 days before each night',
-        value: '• **I\'m in** / **Maybe** / **I\'m out** — Attendance only. These never change a date or a host. ' +
-               'Click again any time to change your answer; the post updates itself.'
+        value: '• **I\'m in** / **Maybe** / **I\'m out**. Change your answer any time by clicking again.'
       },
       {
         name: 'Host check-in — DM, the morning after your night',
-        value: '• **Yes, I hosted** — Marks the night completed, then asks what you played. Search, pick a match, repeat until **No**. Each game is logged to BoardGameGeek with you and everyone who was in.\n' +
-               '• **Skipped / Rescheduled** — The night did not happen, so it is cancelled rather than ' +
-               'handed to the next person. You keep your turn and move to the next slot, and everyone ' +
-               'behind you slides back one week. Nobody loses their place in line.'
+        value: '• **Yes, I hosted** asks you to log your plays and is posted to BGG from the admin\'s account\n' +
+          '• **Skipped / Rescheduled** keeps your turn for the next week.'
       },
       {
         name: 'Tip',
-        value: 'Player names and dates autocomplete — start typing and pick from the list.'
+        value: 'Player names and dates autocomplete.'
       }
     )
     .setFooter({ text: 'Board Game Rotation Bot' })

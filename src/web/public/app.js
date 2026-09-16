@@ -23,6 +23,8 @@ let proposal = null;
 // it only changes on a sync, and none of the other tabs depend on it.
 let library = null;
 let gameFilter = '';
+let showExpansions = false;
+let ownedOnly = true;
 let syncPoll = null;
 
 // ---------------------------------------------------------------- helpers
@@ -421,7 +423,10 @@ function renderPlayers() {
 // Two implementations would drift, and the difference would show up as "the
 // bot found it but the panel didn't", which is nobody's idea of a good time.
 function filteredGames() {
-  return searchGames(library?.games || [], gameFilter).map(hit => hit.game);
+  return searchGames(library?.games || [], gameFilter, {
+    includeExpansions: showExpansions,
+    ownedOnly
+  }).map(hit => hit.game);
 }
 
 const rating = value => (value === null || value === undefined ? '—' : Number(value).toFixed(1));
@@ -484,9 +489,15 @@ function renderGames() {
   }
 
   if (!shown.length) {
+    const heading = gameFilter
+      ? `Nothing matches “${esc(gameFilter)}”`
+      : 'Nothing to show';
+    const hint = showExpansions
+      ? 'Expansion names are searched too, and a hit on one shows its base game.'
+      : 'Expansions are hidden, but a match on an expansion still shows its base game.';
     list.innerHTML = `<div class="empty">
-      <h3>Nothing matches “${esc(gameFilter)}”</h3>
-      <p>Expansion names are searched too, and a hit on one shows its base game.</p>
+      <h3>${heading}</h3>
+      <p>${hint}${ownedOnly ? ' Currently owned titles only.' : ''}</p>
     </div>`;
     return;
   }
@@ -572,8 +583,8 @@ function renderImportOptions() {
   select.disabled = !files.length;
   $('#games-import').disabled = !files.length;
   $('#games-import-hint').textContent = files.length
-    ? 'Rebuild re-reads the last synced pages without refetching — run it after linking someone to a BGG account.'
-    : 'Drop a saved collection.json into data/bgg-import/ and it will appear here.';
+    ? `${files.length === 1 ? '1 file' : files.length + ' files'} ready to import.`
+    : 'No files in data/bgg-import/ yet.';
 }
 
 // Sync progress has to be its own timer. The 30s state poll deliberately skips
@@ -1108,6 +1119,14 @@ document.addEventListener('DOMContentLoaded', () => {
     gameFilter = ev.target.value;
     renderGames();
   };
+  $('#games-expansions').onchange = ev => {
+    showExpansions = ev.target.checked;
+    renderGames();
+  };
+  $('#games-owned').onchange = ev => {
+    ownedOnly = ev.target.checked;
+    renderGames();
+  };
   $('#games-sync').onclick = async () => {
     try {
       library.sync = await api('games/sync', { method: 'POST' });
@@ -1124,6 +1143,31 @@ document.addEventListener('DOMContentLoaded', () => {
       watchSync();
     } catch (err) {
       toast(err.message, true);
+    }
+  };
+  $('#games-upload-btn').onclick = () => $('#games-upload').click();
+  $('#games-upload').onchange = async () => {
+    const picked = $('#games-upload').files[0];
+    $('#games-upload').value = '';
+    if (!picked) return;
+    document.body.classList.add('busy');
+    try {
+      const res = await fetch(`/api/games/import-upload?file=${encodeURIComponent(picked.name)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: picked
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+      library = library || {};
+      library.imports = data.imports;
+      renderImportOptions();
+      $('#games-import-file').value = data.file;
+      toast(`Saved ${data.file} — press Import to load it`);
+    } catch (err) {
+      toast(err.message, true);
+    } finally {
+      document.body.classList.remove('busy');
     }
   };
   $('#games-import').onclick = async () => {

@@ -24,10 +24,13 @@ export const commands = [
     .setName('games')
     .setDescription('Search the games the group owns')
     .addStringOption(opt =>
-      opt.setName('name').setDescription('Game name (fuzzy — "trmis" finds Terraforming Mars)').setRequired(true)
+      opt.setName('name').setDescription('Game name').setRequired(true)
     )
     .addBooleanOption(opt =>
-      opt.setName('expansions').setDescription('Include expansions in the results (default: no)').setRequired(false)
+      opt.setName('expansions').setDescription('Include expansions?').setRequired(false)
+    )
+    .addBooleanOption(opt =>
+      opt.setName('owned').setDescription('Only games someone currently owns?').setRequired(false)
     ),
 
   // =====================================================================

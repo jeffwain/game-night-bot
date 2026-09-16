@@ -423,9 +423,9 @@ const selectRoutes = new Map([
     await i.editReply(buildEntryFocusMessage(Number(id)));
   }],
 
-  ['checkin:pick', async (i, [id]) => {
+  ['checkin:pick', async (i, [id, qty]) => {
     await i.deferUpdate();
-    await pickCheckinPlay(i, Number(id));
+    await pickCheckinPlay(i, Number(id), qty);
   }],
 
   ['host:swapselect', async (i, [id]) => {

@@ -1011,12 +1011,20 @@ export function appendLoggedPlay(gameId, play) {
   const name = String(play?.name || '').trim();
   if (!Number.isInteger(id) || id <= 0) throw new Error('A logged play needs a BGG id.');
 
+  let quantity = Number.parseInt(play?.quantity, 10);
+  if (!Number.isInteger(quantity) || quantity < 1) quantity = 1;
+  if (quantity > 99) quantity = 99;
+
   if (!Array.isArray(entry.logged_plays)) entry.logged_plays = [];
-  if (entry.logged_plays.some(p => Number(p.id) === id)) {
+  const existing = entry.logged_plays.find(p => Number(p.id) === id);
+  if (existing) {
+    existing.quantity = (Number(existing.quantity) || 1) + quantity;
+    if (name) existing.name = name;
+    writeDbSync(db);
     return getSchedule().find(s => s.id === Number(gameId));
   }
 
-  entry.logged_plays.push({ id, name });
+  entry.logged_plays.push({ id, name, quantity });
   writeDbSync(db);
   return getSchedule().find(s => s.id === Number(gameId));
 }

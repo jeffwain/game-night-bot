@@ -98,7 +98,14 @@ in front.
 The Games tab and `/games` search what the group owns. Link players to their
 BoardGameGeek accounts, put `BGG_APP_TOKEN` in `data/.env`
 ([register a token](https://boardgamegeek.com/applications)), and press **Sync
-from BGG**. Geekgroup import and a file drop are also on that tab.
+from BGG**. Each run archives XML under `data/bgg-raw/`. **Rebuild** re-parses
+the latest run without fetching again.
+
+Geekgroup is the other source. On Settings, paste a copied `collection.json`
+cURL from geekgroup.app (session cookies expire). For an offline dump, save
+that JSON — one page, or an array of pages — or the group's CSV export, then
+**Upload** it on the Games tab (or copy it into `data/bgg-import/` and
+**Import**). CSV has no per-person owners or ratings.
 
 ## Config
 
@@ -116,8 +123,9 @@ Almost everything is `/admin config` or the Settings tab. From the environment:
 ## Data
 
 State lives in `data/db.json`, with rolling and daily backups. The game library
-is `data/games.json`. You can edit `db.json` while the bot runs; it reloads on
-the next read.
+is `data/games.json`. Sync archives live in `data/bgg-raw/`; `data/bgg-import/`
+is Geekgroup dumps uploaded from the Games tab or copied in by hand. You can edit
+`db.json` while the bot runs; it reloads on the next read.
 
 ## Updating
 

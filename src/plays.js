@@ -4,7 +4,7 @@
 // a BGG geekplay payload. Discord wiring and the HTTP post live elsewhere so
 // the seating rules can be tested without either.
 
-import { foldText, scoreName } from './web/public/search.js';
+import { foldText, isOwned, scoreName } from './web/public/search.js';
 
 const SELECT_LIMIT = 25;
 const LABEL_MAX = 100;
@@ -49,7 +49,9 @@ export function flattenPlayables(games) {
       name: game.name,
       original_name: game.original_name || game.name,
       is_expansion: Boolean(game.is_expansion),
-      parentName: null
+      parentName: null,
+      status: game.status,
+      owner_count: game.owner_count
     });
     for (const expansion of game.expansions || []) {
       items.push({
@@ -57,11 +59,19 @@ export function flattenPlayables(games) {
         name: expansion.name,
         original_name: expansion.name,
         is_expansion: true,
-        parentName: game.name
+        parentName: game.name,
+        status: expansion.status,
+        owner_count: expansion.owner_count
       });
     }
   }
   return items;
+}
+
+export function parsePlayQuantity(value) {
+  const n = Number.parseInt(String(value ?? '').trim(), 10);
+  if (!Number.isInteger(n) || n < 1) return 1;
+  return Math.min(n, 99);
 }
 
 export function findPlayable(games, id) {
@@ -70,12 +80,14 @@ export function findPlayable(games, id) {
 }
 
 // Expansions are first-class picks here. /games hides them because "do we own
-// X" usually means the base game; "what did we play" does not.
+// X" usually means the base game; "what did we play" does not. Wishlist and
+// previously-owned titles stay out -- you cannot have played a copy nobody has.
 export function searchPlayables(games, query, { limit = SELECT_LIMIT } = {}) {
   const needle = foldText(query);
   if (!needle) return [];
 
   const ranked = flattenPlayables(games)
+    .filter(isOwned)
     .map(item => ({
       ...item,
       score: Math.max(
@@ -100,7 +112,7 @@ export function searchPlayables(games, query, { limit = SELECT_LIMIT } = {}) {
   return out;
 }
 
-export function playPayload({ objectId, playdate, location, players }) {
+export function playPayload({ objectId, playdate, location, players, quantity }) {
   return {
     ajax: 1,
     action: 'save',
@@ -109,7 +121,7 @@ export function playPayload({ objectId, playdate, location, players }) {
     playdate,
     date: `${playdate} 12:00:00`,
     location: location || '',
-    quantity: 1,
+    quantity: parsePlayQuantity(quantity),
     players: (players || []).map(p => ({
       name: p.name,
       username: p.username || '',

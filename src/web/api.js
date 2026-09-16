@@ -461,6 +461,15 @@ async function dispatch({ method, segments, body, deps }) {
       }
     }
 
+    if (method === 'POST' && rest[0] === 'import-upload' && rest.length === 1) {
+      try {
+        const file = sync.saveImportFile(body.file, body.text);
+        return { file, imports: sync.listImportFiles() };
+      } catch (err) {
+        throw badRequest(err.message);
+      }
+    }
+
     if (method === 'POST' && rest[0] === 'import' && rest.length === 1) {
       const file = String(body.file ?? '').trim();
       if (!file) throw badRequest('An import filename is required.');

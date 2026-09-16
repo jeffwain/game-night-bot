@@ -52,6 +52,23 @@ export function scoreName(haystack, needle) {
   return Math.max(30, 50 - Math.round(spread * 4));
 }
 
+// Currently owned: someone in the collection has own=1, or a CSV counted
+// owners without naming them. Wishlist / previously-owned / never-owned are
+// still in the synced dump; they are not "what we can put on the table".
+export function isOwned(game) {
+  if (!game) return false;
+  if ((game.status?.own || []).length > 0) return true;
+  return Number(game.owner_count) > 0;
+}
+
+function keepOwned(game) {
+  if (isOwned(game)) return true;
+  // An unowned base game still belongs in the owned-only list when someone
+  // owns one of its expansions -- otherwise hiding expansions would make
+  // that copy unsearchable.
+  return (game.expansions || []).some(isOwned);
+}
+
 /**
  * Best score for one game, and which expansion earned it if an expansion did.
  * @returns {{score: number, matchedExpansion: string|null}}
@@ -86,12 +103,16 @@ export function scoreGame(game, needle) {
  * @param {boolean}  [includeExpansions] when false, games that are themselves
  *                   expansions are dropped. A base game found *through* one of
  *                   its expansions still counts -- the answer is the base game.
+ * @param {boolean}  [ownedOnly] when true, drop titles nobody currently owns.
+ *                   A base game kept because an expansion is owned still
+ *                   counts -- hiding expansions must not hide that copy.
  * @returns {{game: object, score: number, matchedExpansion: string|null}[]}
  */
-export function searchGames(games, query, { includeExpansions = true } = {}) {
-  const pool = includeExpansions
+export function searchGames(games, query, { includeExpansions = true, ownedOnly = false } = {}) {
+  let pool = includeExpansions
     ? (games || [])
     : (games || []).filter(game => !game.is_expansion);
+  if (ownedOnly) pool = pool.filter(keepOwned);
 
   const needle = foldText(query);
   if (!needle) {

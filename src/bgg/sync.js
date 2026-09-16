@@ -13,7 +13,7 @@ import * as library from '../games.js';
 import { normalize } from './normalize.js';
 import { normalizeCsv } from './csv.js';
 import { fetchAllPages, probeCollection } from './geekgroup.js';
-import { getAppToken, authHeaders, fetchCollections, parseCollectionXml, parseThingParents, toLibrary, redact } from './xmlapi.js';
+import { getAppToken, authHeaders, fetchCollections, parseCollectionXml, parseThingParents, mergeExpansionFlag, toLibrary, redact } from './xmlapi.js';
 
 let syncState = {
   status: 'idle', // idle | running | ok | error
@@ -186,9 +186,9 @@ export async function testConnection() {
 // FILE IMPORT
 // -------------------------------------------------------------
 
-// Body-borne upload is not an option: MAX_BODY_BYTES is 256 KB and a single
-// page dump is 279 KB. Reading from a directory sidesteps raising a limit that
-// protects every other endpoint, and lines up with the mounted /app/data volume.
+// JSON API bodies stay at 256 KB (a single page dump is 279 KB). Upload is a
+// separate raw-body route with its own cap so that limit can stay small.
+// Copying a file into data/bgg-import/ by hand still works.
 //
 // Two shapes are accepted. The .json pages are what the API answers with and
 // carry everything; the .csv export covers the whole collection in one file but
@@ -205,6 +205,24 @@ export function listImportFiles() {
   } catch {
     return [];
   }
+}
+
+export function saveImportFile(filename, text) {
+  const name = String(filename || '').trim();
+  if (!name) throw new Error('An import filename is required.');
+  if (!IMPORT_NAME.test(name)) {
+    throw new Error('Import file must be a .json or .csv file in data/bgg-import/.');
+  }
+  if (!String(text ?? '')) throw new Error('The upload was empty.');
+
+  const { importDir } = library.getPaths();
+  fs.mkdirSync(importDir, { recursive: true });
+  const target = path.resolve(importDir, name);
+  if (path.relative(path.resolve(importDir), target).startsWith('..')) {
+    throw new Error('Import file must be inside the import directory.');
+  }
+  fs.writeFileSync(target, text, 'utf-8');
+  return name;
 }
 
 function resolveImport(filename) {
@@ -287,13 +305,20 @@ export function rebuildFromArchive() {
 
   const collectionXml = files.filter(f => /^collection-.*\.xml$/i.test(f));
   if (collectionXml.length) {
+    const expansionByUser = new Map();
+    for (const name of files.filter(f => /^expansions-.*\.xml$/i.test(f))) {
+      const m = name.match(/^expansions-(\d+)-/i);
+      const xml = fs.readFileSync(path.join(runDir, name), 'utf-8');
+      expansionByUser.set(m ? Number(m[1]) : 0, parseCollectionXml(xml));
+    }
     const collections = collectionXml.map(name => {
       const m = name.match(/^collection-(\d+)-(.+)\.xml$/i);
       const xml = fs.readFileSync(path.join(runDir, name), 'utf-8');
+      const userId = m ? Number(m[1]) : 0;
       return {
-        userId: m ? Number(m[1]) : 0,
+        userId,
         username: m ? m[2] : '',
-        items: parseCollectionXml(xml)
+        items: mergeExpansionFlag(parseCollectionXml(xml), expansionByUser.get(userId) || [])
       };
     });
     const parents = new Map();
